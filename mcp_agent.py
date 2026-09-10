@@ -1,4 +1,5 @@
 import asyncio
+import os
 import sys
 from pathlib import Path
 
@@ -14,6 +15,10 @@ async def main():
         params={
             "command": sys.executable,
             "args": [str(server_path)],
+            "env": {
+            "OPENAI_API_KEY": os.environ["OPENAI_API_KEY"],
+            "OPENAI_VECTOR_STORE_ID": os.environ["OPENAI_VECTOR_STORE_ID"],
+            }
         },
         cache_tools_list=True,
     ) as server:
@@ -32,7 +37,7 @@ async def main():
 
         result = await Runner.run(
             agent,
-            "Does redwood have any capital calls?"
+            "What was Redwood interested in during its most recent meeting?"
         )
 
         print(result.final_output)
