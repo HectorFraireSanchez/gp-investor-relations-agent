@@ -64,3 +64,20 @@ def find_investor(name: str) -> dict | None:
             return investor
 
     return None
+
+def get_positions(investor_id: str) -> list[dict]:
+    """Return all investment positions belonging to an investor."""
+    return [
+        position
+        for position in POSITIONS
+        if position["investor_id"] == investor_id
+    ]
+
+
+def get_capital_calls(investor_id: str) -> list[dict]:
+    """Return all capital calls belonging to an investor."""
+    return [
+        call
+        for call in CAPITAL_CALLS
+        if call["investor_id"] == investor_id
+    ]
