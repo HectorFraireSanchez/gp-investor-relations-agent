@@ -1,3 +1,4 @@
 openai-agents
 openai
 mcp[cli]
+gradio
