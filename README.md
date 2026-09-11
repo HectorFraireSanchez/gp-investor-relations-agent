@@ -20,6 +20,8 @@ an expandable description of the demo data help a new user explore the available
 questions. The UI includes a progress indicator and brief error messages, with
 debugging details in the terminal.
 
+![GP Investor Relations Agent demo](assets/investor-relations-agent-demo.png)
+
 Example questions supported by the included data:
 
 - Prepare me for a meeting with Redwood Family Office. Include its investment
