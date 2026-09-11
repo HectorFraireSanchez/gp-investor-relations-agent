@@ -1,83 +1,56 @@
-INVESTORS = [
-    {
-        "id": "INV-001",
-        "name": "Redwood Family Office",
-        "type": "Family Office",
-    },
-    {
-        "id": "INV-002",
-        "name": "Beacon University Endowment",
-        "type": "Endowment",
-    },
-    {
-        "id": "INV-003",
-        "name": "Atlas Pension Fund",
-        "type": "Pension Fund",
-    },
-]
+import sqlite3
+from contextlib import closing
+from pathlib import Path
 
 
-POSITIONS = [
-    {
-        "investor_id": "INV-001",
-        "fund": "Northstar Growth Fund II",
-        "commitment": 5_000_000,
-        "contributed": 3_750_000,
-        "unfunded_commitment": 1_250_000,
-    },
-    {
-        "investor_id": "INV-002",
-        "fund": "Northstar Growth Fund II",
-        "commitment": 8_000_000,
-        "contributed": 6_500_000,
-        "unfunded_commitment": 1_500_000,
-    },
-]
+DATA_DIR = Path(__file__).parent / "data"
+DB_PATH = DATA_DIR / "northstar.db"
 
 
-CAPITAL_CALLS = [
-    {
-        "id": "CC-019",
-        "investor_id": "INV-001",
-        "fund": "Northstar Growth Fund II",
-        "amount": 250_000,
-        "due_date": "2026-09-30",
-        "status": "Outstanding",
-    },
-    {
-        "id": "CC-020",
-        "investor_id": "INV-002",
-        "fund": "Northstar Growth Fund II",
-        "amount": 400_000,
-        "due_date": "2026-09-25",
-        "status": "Paid",
-    },
-]
+def get_connection():
+    connection = sqlite3.connect(DB_PATH)
+    connection.row_factory = sqlite3.Row
+    return connection
 
 
 def find_investor(name: str) -> dict | None:
-    """Find an investor whose name contains the supplied text."""
-    normalized_name = name.lower()
+    with closing(get_connection()) as connection:
+        row = connection.execute(
+            """
+            SELECT investor_id, name, investor_type
+            FROM investors
+            WHERE lower(name) LIKE ?
+            LIMIT 1
+            """,
+            (f"%{name.lower()}%",),
+        ).fetchone()
 
-    for investor in INVESTORS:
-        if normalized_name in investor["name"].lower():
-            return investor
+    return dict(row) if row else None
 
-    return None
 
 def get_positions(investor_id: str) -> list[dict]:
-    """Return all investment positions belonging to an investor."""
-    return [
-        position
-        for position in POSITIONS
-        if position["investor_id"] == investor_id
-    ]
+    with closing(get_connection()) as connection:
+        rows = connection.execute(
+            """
+            SELECT investor_id, fund, commitment, contributed, unfunded
+            FROM positions
+            WHERE investor_id = ?
+            """,
+            (investor_id,),
+        ).fetchall()
+
+    return [dict(row) for row in rows]
 
 
 def get_capital_calls(investor_id: str) -> list[dict]:
-    """Return all capital calls belonging to an investor."""
-    return [
-        call
-        for call in CAPITAL_CALLS
-        if call["investor_id"] == investor_id
-    ]
+    with closing(get_connection()) as connection:
+        rows = connection.execute(
+            """
+            SELECT call_id, investor_id, fund, amount, due_date, status
+            FROM capital_calls
+            WHERE investor_id = ?
+            """,
+            (investor_id,),
+        ).fetchall()
+
+    return [dict(row) for row in rows]

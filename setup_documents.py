@@ -1,42 +1,70 @@
+import os
 from pathlib import Path
 
-from openai import OpenAI
+from dotenv import load_dotenv, set_key
+from openai import NotFoundError, OpenAI
 
 
-DOCUMENTS_DIR = Path(__file__).parent / "documents"
+ROOT_DIR = Path(__file__).parent
+DOCUMENTS_DIR = ROOT_DIR / "documents"
+ENV_PATH = ROOT_DIR / ".env"
 
-client = OpenAI()
+load_dotenv(ENV_PATH)
 
 
-def main():
+def ensure_vector_store() -> str:
+    client = OpenAI()
+
+    existing_id = os.environ.get("OPENAI_VECTOR_STORE_ID")
+
+    if existing_id:
+        try:
+            client.vector_stores.retrieve(existing_id)
+            print(f"Using existing vector store: {existing_id}")
+            return existing_id
+
+        except NotFoundError:
+            print(
+                "Configured vector store no longer exists. "
+                "Creating a new one..."
+            )
+
     vector_store = client.vector_stores.create(
         name="Northstar Investor Documents"
     )
-
-    print(f"Created vector store: {vector_store.id}")
 
     for file_path in DOCUMENTS_DIR.iterdir():
         if not file_path.is_file():
             continue
 
-        print(f"Uploading {file_path.name}...")
-
         with file_path.open("rb") as file_handle:
-            client.vector_stores.files.upload_and_poll(
+            uploaded_file = client.vector_stores.files.upload_and_poll(
                 vector_store_id=vector_store.id,
                 file=file_handle,
             )
 
-        print(f"Uploaded {file_path.name}")
+        if uploaded_file.status != "completed":
+            raise RuntimeError(
+                f"Document indexing did not complete for {file_path.name}: "
+                f"{uploaded_file.status}"
+            )
 
-    print()
-    print("Document setup complete.")
-    print(f"Vector store ID: {vector_store.id}")
-    print()
-    print("Set this in PowerShell with:")
-    print(
-        f'$env:OPENAI_VECTOR_STORE_ID = "{vector_store.id}"'
+    ENV_PATH.touch(exist_ok=True)
+
+    set_key(
+        str(ENV_PATH),
+        "OPENAI_VECTOR_STORE_ID",
+        vector_store.id,
     )
+
+    # Make the new value available immediately to this running process.
+    os.environ["OPENAI_VECTOR_STORE_ID"] = vector_store.id
+
+    return vector_store.id
+
+
+def main():
+    ensure_vector_store()
 
 
 if __name__ == "__main__":

@@ -4,8 +4,8 @@ An AI-assisted application for investor meeting preparation at Northstar Capital
 a fictional private-markets general partner (GP). An investor-relations user can
 ask for a briefing that brings together fund positions, capital calls, reporting
 obligations and recent meeting context. The local prototype combines deterministic
-data tools and document retrieval through MCP, with source attribution for
-document-backed claims.
+SQLite-backed data tools and semantic document retrieval through MCP, with source
+attribution for document-backed claims.
 
 ## What It Does
 
@@ -35,12 +35,16 @@ Example questions supported by the included data:
 
 ```mermaid
 flowchart TD
-    UI["Browser / Gradio UI"] --> A["Investor Relations Agent<br/>run_agent(prompt)"]
-    A <-->|MCP over stdio| M["MCP server"]
-    M <--> D["Structured tools<br/>domain.py"]
-    M <--> S["Document search tool"]
+    UI["app.py<br/>Gradio UI"] --> A["mcp_agent.py<br/>async run_agent(prompt)"]
+    A <-->|MCP over stdio| M["mcp_server.py<br/>Structured and document tools"]
+    M <--> D["domain.py<br/>SQLite queries"]
+    D <--> DB[("data/northstar.db<br/>Investors, positions, capital calls")]
+    M <--> S["search_investor_documents<br/>Semantic retrieval"]
     S <--> V["OpenAI vector store"]
-    F["documents/<br/>Side letters and meeting notes"] -.->|setup_documents.py| V
+    UI -.->|At startup| SETUP["setup_documents.py<br/>ensure_vector_store()"]
+    F["documents/<br/>Side letters and meeting notes"] -.->|Upload when creating a store| SETUP
+    SETUP -.->|Create or reuse| V
+    SETUP -.->|Persist new store ID| ENV[".env"]
     A --> R["result.final_output<br/>Briefing with source citations"]
     R --> UI
 ```
@@ -51,6 +55,12 @@ server's tools over standard input/output; the MCP connection closes after the
 run. Structured results and retrieved document excerpts return to the agent for
 synthesis.
 
+Structured operational data flows from SQLite through `domain.py` functions to
+MCP tools. Unstructured investor documents remain in `documents/` and are uploaded
+to an OpenAI vector store for semantic retrieval through an MCP tool. The agent
+chooses tools and combines their results; the Gradio UI lets the user run the
+workflow.
+
 For a meeting-preparation request, the agent can resolve the investor, retrieve
 positions and capital calls, search for relevant side-letter and meeting-note
 context, then assemble a briefing. The model selects the tools and their
@@ -59,9 +69,9 @@ arguments; the tool implementations determine how the requested data is retrieve
 ## Design Decisions
 
 - **Structured facts through deterministic tools.** `find_investor`,
-  `get_positions`, and `get_capital_calls` read the in-memory records in
-  `domain.py`. The model chooses which capabilities to invoke; application code
-  supplies the authoritative values for this demo. This keeps financial data
+  `get_positions`, and `get_capital_calls` call `domain.py` functions that query
+  `data/northstar.db` using parameterized SQL. The model chooses which capabilities
+  to invoke; application code supplies the authoritative values for this demo. This keeps financial data
   access behind domain functions rather than asking the model to infer balances
   from prose or giving it arbitrary data access.
 - **Document context through retrieval.** `search_investor_documents` uses
@@ -86,9 +96,9 @@ arguments; the tool implementations determine how the requested data is retrieve
 ## Data and Documents
 
 **All business data is synthetic. Northstar Capital and every investor are
-fictional.** [domain.py](domain.py) contains investor IDs, names and types;
-positions in Northstar Growth Fund II with commitment, contributed and unfunded
-amounts; and capital calls with amounts, due dates and statuses.
+fictional.** [data/northstar.db](data/northstar.db) stores investor IDs, names and
+types; positions in Northstar Growth Fund II with commitment, contributed and
+unfunded amounts; and capital calls with amounts, due dates and statuses.
 
 | Investor | Structured coverage | Documents |
 | --- | --- | --- |
@@ -97,7 +107,8 @@ amounts; and capital calls with amounts, due dates and statuses.
 | Atlas Pension Fund | Investor record only; no position or capital-call records | None |
 
 The four Markdown documents contain reporting obligations and meeting discussion
-context. To inspect an answer, compare financial values with `domain.py` and
+context. To inspect an answer, compare financial values with the SQLite database
+(or its synthetic seed data in [create_database.py](create_database.py)) and
 document-derived claims with the cited files in [documents/](documents/).
 The agent is instructed to acknowledge unavailable information.
 
@@ -107,53 +118,63 @@ The agent is instructed to acknowledge unavailable information.
 app.py               Gradio interface over run_agent(prompt)
 mcp_agent.py         Async agent entry point, instructions and MCP client setup
 mcp_server.py        MCP tools for structured records and document search
-domain.py            Synthetic records and deterministic domain functions
-setup_documents.py   Creates a vector store and uploads/indexes documents
-test_search.py       Standalone search sanity check; prints retrieved results
+domain.py            Domain/data-access functions that query SQLite
+data/northstar.db     SQLite database containing synthetic operational records
+create_database.py   Optional database recreation/reset with synthetic seed data
+setup_documents.py   Reuses or creates a vector store; saves new ID to .env
+test_search.py       Manual vector-store search inspection; loads .env
 function_agent.py    Earlier direct function-tool example, outside the UI path
 documents/           Two synthetic side letters and two meeting-note files
 requirements.txt     Python dependencies
+.env.example         Empty configuration placeholders to copy into .env
 .gitignore           Excludes the virtual environment, .env and Python caches
 ```
 
 ## Running Locally
 
-Use Python 3.10+ and PowerShell. Replace `<repository-url>` with this repository's
-GitHub clone URL: https://github.com/HectorFraireSanchez/gp-investor-relations-agent.git
+Use Python 3.10+ and PowerShell:
 
 ```powershell
-git clone "<repository-url>" gp-investor-relations-agent
+git clone https://github.com/HectorFraireSanchez/gp-investor-relations-agent.git
 cd gp-investor-relations-agent
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
+Copy-Item .env.example .env
 ```
 
-Set your own API key, then initialize your document store:
+Edit `.env` to add your own API key. Leave the vector-store ID blank on first setup:
 
-```powershell
-$env:OPENAI_API_KEY = "<your-openai-api-key>"
-python setup_documents.py
+```dotenv
+OPENAI_API_KEY=your-openai-api-key
+OPENAI_VECTOR_STORE_ID=
 ```
 
-The script creates a new OpenAI vector store and uploads the files in
-`documents/`, waiting for indexing. After it prints `Document setup complete.`,
-copy the printed vector store ID into the next command:
+Start the application:
 
 ```powershell
-$env:OPENAI_VECTOR_STORE_ID = "<vector-store-id-printed-by-setup>"
 python app.py
 ```
+
+At startup, `app.py` calls `ensure_vector_store()` from `setup_documents.py`.
+It reuses the configured store if it exists. If no ID is configured, or OpenAI
+reports that the configured store was not found, it creates a store, uploads the
+files in `documents/`, waits for indexing, and saves `OPENAI_VECTOR_STORE_ID` in
+`.env` and the running process. Initial startup may take longer while documents
+are indexed. No manual document-setup command, ID copying, or PowerShell
+environment-variable exports are needed.
 
 Open **http://127.0.0.1:7860**. Press **Ctrl+C** in the terminal to stop the app.
 The MCP server starts automatically; no separate server command is needed.
 
-Document setup is an initialization step. Each user must create their own vector
-store with their own credentials; this repository does not provide access to
-the author's store. For later runs, activate `.venv`, set both environment
-variables in the current PowerShell session using your existing store ID, and
-run `python app.py`. Do not rerun document setup on every launch: each invocation
-creates another store. Keep credentials out of source files and frontend code.
+For later runs, activate `.venv` and run `python app.py`; configuration is loaded
+from `.env`. That file is intentionally git-ignored, and `.env.example` contains
+placeholders only. Each user supplies their own OpenAI credentials and store.
+
+Normal startup uses the existing `data/northstar.db`. To recreate a missing
+database or reset it to the synthetic seed data, optionally run
+`python create_database.py`. This deletes and replaces the existing database;
+the app does not initialize SQLite automatically.
 
 OpenAI API usage may incur charges and is
 [billed separately from ChatGPT subscriptions](https://help.openai.com/en/articles/9039756-managing-billing-settings-on-chatgpt-web-and-platform).
@@ -165,19 +186,21 @@ To run only on localhost without attempting a sharing tunnel, use this command
 instead of `python app.py`:
 
 ```powershell
-python -c "from app import demo; demo.launch(server_name='127.0.0.1', server_port=7860, share=False)"
+python -c "from app import demo, ensure_vector_store; ensure_vector_store(); demo.launch(server_name='127.0.0.1', server_port=7860, share=False)"
 ```
 
 ## Technology
 
 Python, OpenAI Agents SDK, Model Context Protocol (MCP) Python SDK, OpenAI API
-and vector stores, and Gradio.
+and vector stores, SQLite, python-dotenv, and Gradio.
 
 ## Current Scope and Limitations
 
 - A portfolio prototype with a small synthetic dataset and local execution;
   temporary sharing is not a managed production deployment. Operational records
-  are in-memory fixtures, with no connection to a live fund-administration system.
+  are synthetic SQLite records, with no connection to a live fund-administration
+  system.
+- Reusing an existing vector store does not synchronize changes to local documents.
 - No application authentication, authorization or tenant isolation. Filename
   filtering only narrows retrieved context.
 - Responses and tool selection are model-driven. Instructions request source

@@ -1,9 +1,14 @@
 import json
+from pathlib import Path
 
 from agents import Agent, Runner
 from agents.decorators import tool
+from dotenv import load_dotenv
 
 import domain
+
+
+load_dotenv(Path(__file__).parent / ".env")
 
 
 @tool
@@ -46,7 +51,7 @@ agent = Agent(
 
 result = Runner.run_sync(
     agent,
-    "What is Redwood Family Office's unfunded commitment?"
+    "What are Redwood's positions?"
 )
 
 print(result.final_output)

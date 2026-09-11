@@ -1,9 +1,16 @@
 import logging
 import os
+from pathlib import Path
 
 import gradio as gr
+from dotenv import load_dotenv
 
 from mcp_agent import run_agent
+from setup_documents import ensure_vector_store
+
+
+ROOT_DIR = Path(__file__).parent
+load_dotenv(ROOT_DIR / ".env")
 
 
 async def generate_briefing(prompt: str, progress=gr.Progress()):
@@ -15,8 +22,9 @@ async def generate_briefing(prompt: str, progress=gr.Progress()):
         for name in ("OPENAI_API_KEY", "OPENAI_VECTOR_STORE_ID")
     ):
         return (
-            "Please set OPENAI_API_KEY and OPENAI_VECTOR_STORE_ID in the terminal "
-            "before starting the UI. See README.md for setup instructions."
+            "Missing OpenAI configuration. Add OPENAI_API_KEY to .env and run "
+            "setup_documents.py to configure OPENAI_VECTOR_STORE_ID. "
+            "See README.md for setup instructions."
         )
 
     progress(0, desc="Generating briefing...")
@@ -68,12 +76,22 @@ with demo:
             "Available investors are **Redwood Family Office**, "
             "**Beacon University Endowment**, and **Atlas Pension Fund**.\n\n"
             "All data is entirely synthetic. The demo combines structured "
-            "investor/fund data in `domain.py` with investor documents in "
+            "investor/fund data stored in `data/northstar.db` with investor documents in "
             "`documents/`, including side letters and meeting notes.\n\n"
             "Document-derived responses include source filename citations so "
             "you can verify claims against the underlying files in `documents/`."
         )
 
 
+def main():
+    ensure_vector_store()
+
+    demo.launch(
+        server_name="127.0.0.1",
+        server_port=7860,
+        share=True,
+    )
+
+
 if __name__ == "__main__":
-    demo.launch(server_name="127.0.0.1", server_port=7860, share=True)
+    main()

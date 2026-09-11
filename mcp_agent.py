@@ -5,10 +5,14 @@ from pathlib import Path
 
 from agents import Agent, Runner
 from agents.mcp import MCPServerStdio
+from dotenv import load_dotenv
+
+ROOT_DIR = Path(__file__).parent
+load_dotenv(ROOT_DIR / ".env")
 
 
 async def run_agent(prompt: str):
-    server_path = Path(__file__).parent / "mcp_server.py"
+    server_path = ROOT_DIR / "mcp_server.py"
 
     async with MCPServerStdio(
         name="Northstar Investor Operations",
@@ -16,9 +20,9 @@ async def run_agent(prompt: str):
             "command": sys.executable,
             "args": [str(server_path)],
             "env": {
-            "OPENAI_API_KEY": os.environ["OPENAI_API_KEY"],
-            "OPENAI_VECTOR_STORE_ID": os.environ["OPENAI_VECTOR_STORE_ID"],
-            }
+                "OPENAI_API_KEY": os.environ["OPENAI_API_KEY"],
+                "OPENAI_VECTOR_STORE_ID": os.environ["OPENAI_VECTOR_STORE_ID"],
+            },
         },
         cache_tools_list=True,
     ) as server:
@@ -45,6 +49,7 @@ async def run_agent(prompt: str):
 
         return result
 
+
 async def main():
     prompt = """
     Prepare me for a meeting with Redwood Family Office.
@@ -61,7 +66,7 @@ async def main():
     result = await run_agent(prompt)
 
     print(result.final_output)
-    
+
 
 if __name__ == "__main__":
     asyncio.run(main())

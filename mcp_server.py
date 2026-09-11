@@ -1,10 +1,16 @@
+import os
+from pathlib import Path
+
+import domain
+from dotenv import load_dotenv
 from mcp.server import MCPServer
 from openai import OpenAI
 
-import domain, os
-
 
 mcp = MCPServer("Northstar Investor Operations")
+
+ROOT_DIR = Path(__file__).parent
+load_dotenv(ROOT_DIR / ".env")
 
 openai_client = OpenAI()
 VECTOR_STORE_ID = os.environ["OPENAI_VECTOR_STORE_ID"]
