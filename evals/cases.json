@@ -1,122 +1,249 @@
 [
   {
     "id": "redwood_capital_call",
-    "prompt": "What outstanding capital calls does Redwood Family Office have? Include the investor name, fund, call ID, amount, due date, and recorded status. Format amounts with comma thousands separators, dates as YYYY-MM-DD, and status exactly as recorded.",
+    "prompt": "Does Redwood have any outstanding capital calls?",
     "must_contain": [
-      "Redwood Family Office",
+      "Redwood",
       "Northstar Growth Fund II",
-      "CC-019",
-      "250,000",
-      "2026-09-30",
       "Outstanding"
     ],
+    "must_contain_amounts": [
+      250000
+    ],
     "must_not_contain": [
-      "Beacon University Endowment",
+      "Beacon",
       "CC-020",
       "400,000",
-      "2026-09-25",
-      "Paid"
+      "2026-09-25"
+    ],
+    "required_tools": [
+      "find_investor",
+      "get_capital_calls"
+    ],
+    "forbidden_tools": [
+      "get_positions",
+      "search_investor_documents"
     ]
   },
   {
     "id": "redwood_position",
-    "prompt": "What is Redwood Family Office's position in Northstar Growth Fund II? Include the investor and fund names. Report the amounts on plain-text lines labeled 'Commitment: ', 'Contributed: ', and 'Unfunded: ', using comma thousands separators and no currency symbols or abbreviations.",
+    "prompt": "What's Redwood's current position in Northstar Growth Fund II?",
     "must_contain": [
-      "Redwood Family Office",
-      "Northstar Growth Fund II",
-      "Commitment: 5,000,000",
-      "Contributed: 3,750,000",
-      "Unfunded: 1,250,000"
+      "Redwood",
+      "Northstar Growth Fund II"
+    ],
+    "must_contain_amounts": [
+      5000000,
+      3750000,
+      1250000
     ],
     "must_not_contain": [
-      "Beacon University Endowment",
+      "Beacon",
       "8,000,000",
       "6,500,000",
       "1,500,000"
+    ],
+    "required_tools": [
+      "find_investor",
+      "get_positions"
+    ],
+    "forbidden_tools": [
+      "get_capital_calls",
+      "search_investor_documents"
     ]
   },
   {
     "id": "beacon_paid_capital_call",
-    "prompt": "List Beacon University Endowment's recorded capital calls and determine how many are outstanding. Include the investor name, fund, call ID, amount, and due date. Format amounts with comma thousands separators and dates as YYYY-MM-DD. For each call, put its recorded status on a plain-text line 'Status: <status>'. End with a plain-text line 'Outstanding calls: <count>'.",
+    "prompt": "Where do things stand with Beacon's latest capital call?",
     "must_contain": [
-      "Beacon University Endowment",
+      "Beacon",
       "Northstar Growth Fund II",
-      "CC-020",
-      "400,000",
-      "2026-09-25",
-      "Status: Paid",
-      "Outstanding calls: 0"
+      "Paid"
+    ],
+    "must_contain_amounts": [
+      400000
     ],
     "must_not_contain": [
-      "Redwood Family Office",
+      "Redwood",
       "CC-019",
       "250,000",
       "2026-09-30",
       "Status: Outstanding",
       "Outstanding calls: 1"
+    ],
+    "required_tools": [
+      "find_investor",
+      "get_capital_calls"
+    ],
+    "forbidden_tools": [
+      "get_positions",
+      "search_investor_documents"
     ]
   },
   {
     "id": "redwood_reporting_obligations",
-    "prompt": "What special reporting obligations apply to Redwood Family Office for Northstar Growth Fund II? Quote the reporting obligations from its side letter, including the report type, coverage, frequency, and delivery deadline. Cite the source filename in the format [Source: filename].",
+    "prompt": "Does Redwood have any special reporting requirements?",
     "must_contain": [
-      "Redwood Family Office",
+      "Redwood",
       "Northstar Growth Fund II",
-      "quarterly ESG report",
-      "portfolio companies",
+      "quarter",
+      "ESG",
       "30 days",
-      "each calendar quarter",
-      "[Source: redwood_side_letter.md]"
+      "redwood_side_letter.md"
     ],
     "must_not_contain": [
-      "Beacon University Endowment",
+      "Beacon",
       "diversity and workforce report",
       "60 days",
       "beacon_side_letter.md"
+    ],
+    "required_tools": [
+      "search_investor_documents"
+    ],
+    "forbidden_tools": [
+      "get_positions",
+      "get_capital_calls"
     ]
   },
   {
     "id": "redwood_latest_meeting",
-    "prompt": "What did Redwood Family Office discuss in its most recent recorded meeting, and what follow-up did Investor Relations agree to? Include the investor name and meeting date in YYYY-MM-DD format. Use the original wording for the discussion topics and follow-up action, and cite the source filename in the format [Source: filename].",
+    "prompt": "What did we discuss with Redwood last time, and what follow-up did we agree to?",
     "must_contain": [
-      "Redwood Family Office",
-      "2026-08-14",
-      "technology investments",
-      "artificial intelligence and automation",
-      "quarterly ESG report",
-      "discuss the technology portfolio",
-      "next scheduled meeting",
-      "[Source: redwood_meeting_notes_2026_08_14.md]"
+      "Redwood",
+      "technology",
+      "automation",
+      "ESG",
+      "redwood_meeting_notes_2026_08_14.md"
     ],
     "must_not_contain": [
-      "Beacon University Endowment",
+      "Beacon",
       "2026-07-20",
       "geographic diversification",
       "European markets",
       "beacon_meeting_notes_2026_07_20.md"
+    ],
+    "required_tools": [
+      "search_investor_documents"
+    ],
+    "forbidden_tools": [
+      "get_positions",
+      "get_capital_calls"
     ]
   },
   {
     "id": "atlas_missing_records",
-    "prompt": "Look up Atlas Pension Fund and report its investor ID, positions, capital calls, and special reporting obligations. Include the investor name. When a category has no available records, use the exact plain-text line 'Positions: unavailable', 'Capital calls: unavailable', or 'Reporting obligations: unavailable', as appropriate. Missing records must not be treated as zero balances or proof that no obligations exist.",
+    "prompt": "What should I know about Atlas Pension Fund before I speak with them?",
     "must_contain": [
-      "Atlas Pension Fund",
-      "INV-003",
-      "Positions: unavailable",
-      "Capital calls: unavailable",
-      "Reporting obligations: unavailable"
+      "Pension fund"
     ],
     "must_not_contain": [
-      "Redwood Family Office",
-      "Beacon University Endowment",
+      "Redwood",
+      "Beacon",
       "INV-001",
       "INV-002",
       "CC-019",
       "CC-020",
+      "5,000,000",
+      "3,750,000",
+      "1,250,000",
+      "8,000,000",
+      "6,500,000",
+      "1,500,000",
+      "250,000",
+      "400,000",
+      "2026-09-30",
+      "2026-09-25",
       "redwood_side_letter.md",
       "beacon_side_letter.md",
       "redwood_meeting_notes_2026_08_14.md",
       "beacon_meeting_notes_2026_07_20.md"
+    ],
+    "required_tools": [
+      "find_investor",
+      "get_positions",
+      "get_capital_calls",
+      "search_investor_documents"
+    ],
+    "forbidden_tools": []
+  },
+  {
+    "id": "redwood_position_and_calls",
+    "prompt": "Give me Redwood's current position and any outstanding capital calls.",
+    "must_contain": [
+      "Redwood",
+      "Northstar Growth Fund II",
+      "Outstanding"
+    ],
+    "must_contain_amounts": [
+      5000000,
+      3750000,
+      1250000,
+      250000
+    ],
+    "must_not_contain": [
+      "Beacon",
+      "INV-002",
+      "CC-020",
+      "8,000,000",
+      "6,500,000",
+      "1,500,000",
+      "400,000",
+      "2026-09-25",
+      "beacon_side_letter.md",
+      "beacon_meeting_notes_2026_07_20.md"
+    ],
+    "required_tools": [
+      "find_investor",
+      "get_positions",
+      "get_capital_calls"
+    ],
+    "forbidden_tools": [
+      "search_investor_documents"
     ]
+  },
+  {
+    "id": "redwood_meeting_briefing",
+    "prompt": "Prep me for my meeting with Redwood Family Office.",
+    "must_contain": [
+      "Redwood",
+      "Northstar Growth Fund II",
+      "Outstanding",
+      "quarter",
+      "ESG",
+      "30 days",
+      "technology",
+      "automation",
+      "redwood_side_letter.md",
+      "redwood_meeting_notes_2026_08_14.md"
+    ],
+    "must_contain_amounts": [
+      5000000,
+      3750000,
+      1250000,
+      250000
+    ],
+    "must_not_contain": [
+      "Beacon",
+      "INV-002",
+      "CC-020",
+      "8,000,000",
+      "6,500,000",
+      "1,500,000",
+      "400,000",
+      "2026-09-25",
+      "diversity and workforce report",
+      "60 days",
+      "geographic diversification",
+      "European markets",
+      "beacon_side_letter.md",
+      "beacon_meeting_notes_2026_07_20.md"
+    ],
+    "required_tools": [
+      "find_investor",
+      "get_positions",
+      "get_capital_calls",
+      "search_investor_documents"
+    ],
+    "forbidden_tools": []
   }
 ]
