@@ -16,22 +16,50 @@ openai_client = OpenAI()
 VECTOR_STORE_ID = os.environ["OPENAI_VECTOR_STORE_ID"]
 
 
+def _with_database_source(record: dict, table: str, key_fields: tuple[str, ...]) -> dict:
+    """Attach provenance using the actual returned record's identifying fields."""
+    record_key = {field: record[field] for field in key_fields}
+    source_id = f"db:{table}:" + ":".join(str(value) for value in record_key.values())
+    return {
+        "data": record,
+        "sources": [
+            {
+                "source_id": source_id,
+                "source_type": "database",
+                "database": domain.DB_PATH.name,
+                "schema": "main",
+                "table": table,
+                "record_key": record_key,
+            }
+        ],
+    }
+
+
 @mcp.tool()
-def find_investor(name: str) -> dict | None:
-    """Find an investor by name."""
-    return domain.find_investor(name)
+def find_investor(name: str) -> dict:
+    """Find an investor by name, returning data and source provenance."""
+    record = domain.find_investor(name)
+    if record is None:
+        return {"data": None, "sources": []}
+    return _with_database_source(record, "investors", ("investor_id",))
 
 
 @mcp.tool()
 def get_positions(investor_id: str) -> list[dict]:
-    """Get an investor's fund positions."""
-    return domain.get_positions(investor_id)
+    """Get an investor's fund positions, each with data and source provenance."""
+    return [
+        _with_database_source(record, "positions", ("investor_id", "fund"))
+        for record in domain.get_positions(investor_id)
+    ]
 
 
 @mcp.tool()
 def get_capital_calls(investor_id: str) -> list[dict]:
-    """Get an investor's capital calls."""
-    return domain.get_capital_calls(investor_id)
+    """Get an investor's capital calls, each with data and source provenance."""
+    return [
+        _with_database_source(record, "capital_calls", ("call_id",))
+        for record in domain.get_capital_calls(investor_id)
+    ]
 
 @mcp.tool()
 def search_investor_documents(
@@ -43,6 +71,7 @@ def search_investor_documents(
 
     Use this for unstructured information such as side-letter terms,
     meeting notes, reporting requirements, and fund-report context.
+    Each result contains retrieved data and document source provenance.
     """
 
     search_query = f"{investor_name}: {query}"
@@ -71,10 +100,20 @@ def search_investor_documents(
 
         results.append(
             {
-                "file_id": item.file_id,
-                "filename": filename,
-                "score": item.score,
-                "text": "\n".join(text_parts),
+                "data": {
+                    "file_id": item.file_id,
+                    "filename": filename,
+                    "score": item.score,
+                    "text": "\n".join(text_parts),
+                },
+                "sources": [
+                    {
+                        "source_id": f"doc:{filename}",
+                        "source_type": "document",
+                        "filename": filename,
+                        "file_id": item.file_id,
+                    }
+                ],
             }
         )
 
