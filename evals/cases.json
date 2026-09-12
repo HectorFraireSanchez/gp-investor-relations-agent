@@ -1,0 +1,122 @@
+[
+  {
+    "id": "redwood_capital_call",
+    "prompt": "What outstanding capital calls does Redwood Family Office have? Include the investor name, fund, call ID, amount, due date, and recorded status. Format amounts with comma thousands separators, dates as YYYY-MM-DD, and status exactly as recorded.",
+    "must_contain": [
+      "Redwood Family Office",
+      "Northstar Growth Fund II",
+      "CC-019",
+      "250,000",
+      "2026-09-30",
+      "Outstanding"
+    ],
+    "must_not_contain": [
+      "Beacon University Endowment",
+      "CC-020",
+      "400,000",
+      "2026-09-25",
+      "Paid"
+    ]
+  },
+  {
+    "id": "redwood_position",
+    "prompt": "What is Redwood Family Office's position in Northstar Growth Fund II? Include the investor and fund names. Report the amounts on plain-text lines labeled 'Commitment: ', 'Contributed: ', and 'Unfunded: ', using comma thousands separators and no currency symbols or abbreviations.",
+    "must_contain": [
+      "Redwood Family Office",
+      "Northstar Growth Fund II",
+      "Commitment: 5,000,000",
+      "Contributed: 3,750,000",
+      "Unfunded: 1,250,000"
+    ],
+    "must_not_contain": [
+      "Beacon University Endowment",
+      "8,000,000",
+      "6,500,000",
+      "1,500,000"
+    ]
+  },
+  {
+    "id": "beacon_paid_capital_call",
+    "prompt": "List Beacon University Endowment's recorded capital calls and determine how many are outstanding. Include the investor name, fund, call ID, amount, and due date. Format amounts with comma thousands separators and dates as YYYY-MM-DD. For each call, put its recorded status on a plain-text line 'Status: <status>'. End with a plain-text line 'Outstanding calls: <count>'.",
+    "must_contain": [
+      "Beacon University Endowment",
+      "Northstar Growth Fund II",
+      "CC-020",
+      "400,000",
+      "2026-09-25",
+      "Status: Paid",
+      "Outstanding calls: 0"
+    ],
+    "must_not_contain": [
+      "Redwood Family Office",
+      "CC-019",
+      "250,000",
+      "2026-09-30",
+      "Status: Outstanding",
+      "Outstanding calls: 1"
+    ]
+  },
+  {
+    "id": "redwood_reporting_obligations",
+    "prompt": "What special reporting obligations apply to Redwood Family Office for Northstar Growth Fund II? Quote the reporting obligations from its side letter, including the report type, coverage, frequency, and delivery deadline. Cite the source filename in the format [Source: filename].",
+    "must_contain": [
+      "Redwood Family Office",
+      "Northstar Growth Fund II",
+      "quarterly ESG report",
+      "portfolio companies",
+      "30 days",
+      "each calendar quarter",
+      "[Source: redwood_side_letter.md]"
+    ],
+    "must_not_contain": [
+      "Beacon University Endowment",
+      "diversity and workforce report",
+      "60 days",
+      "beacon_side_letter.md"
+    ]
+  },
+  {
+    "id": "redwood_latest_meeting",
+    "prompt": "What did Redwood Family Office discuss in its most recent recorded meeting, and what follow-up did Investor Relations agree to? Include the investor name and meeting date in YYYY-MM-DD format. Use the original wording for the discussion topics and follow-up action, and cite the source filename in the format [Source: filename].",
+    "must_contain": [
+      "Redwood Family Office",
+      "2026-08-14",
+      "technology investments",
+      "artificial intelligence and automation",
+      "quarterly ESG report",
+      "discuss the technology portfolio",
+      "next scheduled meeting",
+      "[Source: redwood_meeting_notes_2026_08_14.md]"
+    ],
+    "must_not_contain": [
+      "Beacon University Endowment",
+      "2026-07-20",
+      "geographic diversification",
+      "European markets",
+      "beacon_meeting_notes_2026_07_20.md"
+    ]
+  },
+  {
+    "id": "atlas_missing_records",
+    "prompt": "Look up Atlas Pension Fund and report its investor ID, positions, capital calls, and special reporting obligations. Include the investor name. When a category has no available records, use the exact plain-text line 'Positions: unavailable', 'Capital calls: unavailable', or 'Reporting obligations: unavailable', as appropriate. Missing records must not be treated as zero balances or proof that no obligations exist.",
+    "must_contain": [
+      "Atlas Pension Fund",
+      "INV-003",
+      "Positions: unavailable",
+      "Capital calls: unavailable",
+      "Reporting obligations: unavailable"
+    ],
+    "must_not_contain": [
+      "Redwood Family Office",
+      "Beacon University Endowment",
+      "INV-001",
+      "INV-002",
+      "CC-019",
+      "CC-020",
+      "redwood_side_letter.md",
+      "beacon_side_letter.md",
+      "redwood_meeting_notes_2026_08_14.md",
+      "beacon_meeting_notes_2026_07_20.md"
+    ]
+  }
+]
