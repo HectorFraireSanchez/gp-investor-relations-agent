@@ -1,10 +1,11 @@
 import asyncio
 import json
 import os
+import re
 import sys
 from collections.abc import Mapping
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from agents import Agent, Runner
@@ -14,6 +15,7 @@ from dotenv import load_dotenv
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
+CITATION_PATTERN = re.compile(r"\[\[cite:([^\[\]]*)\]\]")
 
 
 @dataclass
@@ -21,6 +23,22 @@ class AgentResponse:
     final_output: str
     sources: list[dict]
     new_items: list[RunItem]
+    cited_source_ids: list[str] = field(default_factory=list)
+    invalid_source_ids: list[str] = field(default_factory=list)
+
+
+def validate_citations(answer: str, sources: list[dict]) -> tuple[list[str], list[str]]:
+    """Return cited IDs and invalid IDs; this checks membership, not claim support.
+
+    Both lists are unique and ordered by first appearance. IDs are not normalized.
+    Only the supplied per-run sources establish validity; neither input is modified.
+    """
+    cited_source_ids = list(dict.fromkeys(CITATION_PATTERN.findall(answer)))
+    valid_source_ids = {source["source_id"] for source in sources}
+    invalid_source_ids = [
+        source_id for source_id in cited_source_ids if source_id not in valid_source_ids
+    ]
+    return cited_source_ids, invalid_source_ids
 
 
 def _capture_mcp_sources(context: MCPToolCustomDataContext) -> dict | None:
@@ -114,23 +132,30 @@ async def run_agent(prompt: str) -> AgentResponse:
                 "or a broader briefing. "
                 "Tool results pair data with sources containing provenance metadata. "
                 "Ground factual claims in the returned data and associate them with "
-                "the corresponding sources. Never invent source identifiers or metadata; "
-                "use the returned database provenance for structured facts and the "
-                "returned document filenames for document-derived claims. "
+                "the corresponding sources. For each material factual claim with returned "
+                "provenance, cite its exact source_id immediately after the claim using "
+                "[[cite:<source_id>]]. Cite both structured database facts and document-derived "
+                "facts. If a claim relies on multiple sources, use one marker per source. "
+                "Copy source_id values exactly from tool results; never invent, modify, "
+                "shorten, reconstruct, or guess them. Use these markers instead of free-form "
+                "source text or manually reconstructed database, schema, table, or filename "
+                "citations. Do not reproduce full provenance objects in the answer. "
                 "Never invent information. If required information is unavailable, say so. "
-                "For every material claim that comes from document retrieval, include "
-                "the source filename immediately after the claim in the format "
-                "[Source: filename]."
+                "If no source metadata is returned for a claim, do not fabricate a citation."
             ),
             mcp_servers=[server],
         )
 
         result = await Runner.run(agent, prompt)
+        sources = collect_sources(result.new_items)
+        cited_source_ids, invalid_source_ids = validate_citations(result.final_output, sources)
 
         return AgentResponse(
             final_output=result.final_output,
-            sources=collect_sources(result.new_items),
+            sources=sources,
             new_items=result.new_items,
+            cited_source_ids=cited_source_ids,
+            invalid_source_ids=invalid_source_ids,
         )
 
 
