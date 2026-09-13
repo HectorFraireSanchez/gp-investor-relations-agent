@@ -14,13 +14,10 @@ records, side-letter obligations and prior discussion points before an investor
 meeting. Its scope is read-only briefing preparation for an IR professional to
 review.
 
-In the Gradio UI, enter a natural-language request or select an example, click
-**Generate Briefing**, and read the synthesized response. Clickable examples and
-an expandable description of the demo data help a new user explore the available
-questions. The UI includes a progress indicator and brief error messages, with
-debugging details in the terminal.
-
-![GP Investor Relations Agent demo](assets/investor-relations-agent-demo.png)
+Pass a natural-language request to the CLI to receive a briefing with numbered
+citations and a source list. The frontend-independent Python service returns the
+same answer and full source metadata for future clients. No web UI or HTTP API
+is currently included.
 
 Example questions supported by the included data:
 
@@ -35,18 +32,22 @@ Example questions supported by the included data:
 
 ```mermaid
 flowchart TD
-    UI["app.py<br/>Gradio UI"] --> A["mcp_agent.py<br/>async run_agent(prompt)"]
+    CLI["cli.py"] --> SERVICE["service.py<br/>async generate_briefing(prompt)"]
+    SERVICE --> A["mcp_agent.py<br/>async run_agent(prompt)"]
     A <-->|MCP over stdio| M["mcp_server.py<br/>Structured and document tools"]
     M <--> D["domain.py<br/>SQLite queries"]
     D <--> DB[("data/northstar.db<br/>Investors, positions, capital calls")]
     M <--> S["search_investor_documents<br/>Semantic retrieval"]
     S <--> V["OpenAI vector store"]
-    UI -.->|At startup| SETUP["setup_documents.py<br/>ensure_vector_store()"]
+    CLI -.->|At startup| SETUP["setup_documents.py<br/>ensure_vector_store()"]
     F["documents/<br/>Side letters and meeting notes"] -.->|Upload when creating a store| SETUP
     SETUP -.->|Create or reuse| V
     SETUP -.->|Persist new store ID| ENV[".env"]
-    A --> R["result.final_output<br/>Briefing with source citations"]
-    R --> UI
+    A --> RAW["AgentResponse<br/>Answer, provenance, validation, SDK items"]
+    RAW --> R["citations.py<br/>Deterministic citation rendering"]
+    R --> SERVICE
+    SERVICE --> RESULT["RenderedResponse<br/>Answer, citations, invalid source IDs"]
+    RESULT --> CLI
 ```
 
 For each request, `mcp_agent.py` starts `mcp_server.py` as a subprocess using the
@@ -58,8 +59,8 @@ synthesis.
 Structured operational data flows from SQLite through `domain.py` functions to
 MCP tools. Unstructured investor documents remain in `documents/` and are uploaded
 to an OpenAI vector store for semantic retrieval through an MCP tool. The agent
-chooses tools and combines their results; the Gradio UI lets the user run the
-workflow.
+chooses tools and combines their results; the CLI calls the shared service to run
+the workflow and render its citations.
 
 For a meeting-preparation request, the agent can resolve the investor, retrieve
 positions and capital calls, search for relevant side-letter and meeting-note
@@ -84,14 +85,16 @@ arguments; the tool implementations determine how the requested data is retrieve
   are exposed through the same MCP server. MCP provides tool discovery and
   invocation; domain functions and vector-store search perform the actual data
   access. Business logic remains separate from agent configuration.
-- **Source attribution.** Search results preserve file IDs, filenames, relevance
-  scores, and text. The agent is instructed to cite each material document-derived
-  claim as `[Source: filename]`, making it inspectable against the source file.
-  Citation compliance is instruction-based and is not independently validated.
-- **Reuse across entry points.** The Gradio UI in `app.py` and the command-line
-  example in `mcp_agent.py` both call `await run_agent(prompt)`. The UI renders
-  `result.final_output` as Markdown, adding a user-facing workflow around the
-  same agent configuration, MCP connection, retrieval and citation instructions.
+- **Source attribution.** MCP results include authoritative database/document
+  provenance. The agent uses `[[cite:source_id]]` markers, validated against sources
+  returned during that run. Python assigns numbers in order of first citation,
+  reuses numbers for repeated sources, and displays invalid references as
+  `[citation unavailable]`. This validates source identity, not claim support.
+- **Reuse across entry points.** `service.generate_briefing(prompt)` returns a
+  `RenderedResponse` with `answer`, `citations`, and `invalid_source_ids`. Each
+  citation preserves the full authoritative source object. Use
+  `dataclasses.asdict(result)` for a JSON-ready dictionary. The CLI uses this
+  boundary; evaluations continue to inspect the raw `run_agent()` response.
 
 ## Data and Documents
 
@@ -115,7 +118,9 @@ The agent is instructed to acknowledge unavailable information.
 ## Project Structure
 
 ```text
-app.py               Gradio interface over run_agent(prompt)
+cli.py               Local command-line entry point and document-store setup
+service.py           Frontend-independent briefing service
+citations.py         Deterministic rendering of validated citation references
 mcp_agent.py         Async agent entry point, instructions and MCP client setup
 mcp_server.py        MCP tools for structured records and document search
 domain.py            Domain/data-access functions that query SQLite
@@ -123,7 +128,9 @@ data/northstar.db     SQLite database containing synthetic operational records
 create_database.py   Optional database recreation/reset with synthetic seed data
 setup_documents.py   Reuses or creates a vector store; saves new ID to .env
 test_search.py       Manual vector-store search inspection; loads .env
-function_agent.py    Earlier direct function-tool example, outside the UI path
+function_agent.py    Earlier direct function-tool example, outside the service path
+tests/               Offline citation-renderer, service, and CLI tests
+evals/               Raw agent evaluations with multiple trials and saved results
 documents/           Two synthetic side letters and two meeting-note files
 requirements.txt     Python dependencies
 .env.example         Empty configuration placeholders to copy into .env
@@ -153,10 +160,10 @@ OPENAI_VECTOR_STORE_ID=
 Start the application:
 
 ```powershell
-python app.py
+python cli.py "Prep me for my meeting with Redwood Family Office."
 ```
 
-At startup, `app.py` calls `ensure_vector_store()` from `setup_documents.py`.
+At startup, `cli.py` calls `ensure_vector_store()` from `setup_documents.py` once.
 It reuses the configured store if it exists. If no ID is configured, or OpenAI
 reports that the configured store was not found, it creates a store, uploads the
 files in `documents/`, waits for indexing, and saves `OPENAI_VECTOR_STORE_ID` in
@@ -164,10 +171,10 @@ files in `documents/`, waits for indexing, and saves `OPENAI_VECTOR_STORE_ID` in
 are indexed. No manual document-setup command, ID copying, or PowerShell
 environment-variable exports are needed.
 
-Open **http://127.0.0.1:7860**. Press **Ctrl+C** in the terminal to stop the app.
+The CLI prints the rendered answer and its numbered source list, then exits.
 The MCP server starts automatically; no separate server command is needed.
 
-For later runs, activate `.venv` and run `python app.py`; configuration is loaded
+For later runs, activate `.venv` and run `python cli.py "Your question"`; configuration is loaded
 from `.env`. That file is intentionally git-ignored, and `.env.example` contains
 placeholders only. Each user supplies their own OpenAI credentials and store.
 
@@ -179,25 +186,30 @@ the app does not initialize SQLite automatically.
 OpenAI API usage may incur charges and is
 [billed separately from ChatGPT subscriptions](https://help.openai.com/en/articles/9039756-managing-billing-settings-on-chatgpt-web-and-platform).
 
-**Current sharing behavior:** `app.py` uses `share=True`, so startup also attempts
-to create a temporary public Gradio link. The app still runs on your machine;
-anyone using that link submits requests with your configured API credentials.
-To run only on localhost without attempting a sharing tunnel, use this command
-instead of `python app.py`:
+Run the deterministic tests without API calls:
 
 ```powershell
-python -c "from app import demo, ensure_vector_store; ensure_vector_store(); demo.launch(server_name='127.0.0.1', server_port=7860, share=False)"
+python -m unittest discover -s tests -v
 ```
+
+Run raw agent evaluations with API access and a configured vector store:
+
+```powershell
+python evals/run_evals.py
+```
+
+Future clients can call `await service.generate_briefing(prompt)` after loading
+configuration and ensuring the document store at application startup.
 
 ## Technology
 
 Python, OpenAI Agents SDK, Model Context Protocol (MCP) Python SDK, OpenAI API
-and vector stores, SQLite, python-dotenv, and Gradio.
+and vector stores, SQLite, and python-dotenv.
 
 ## Current Scope and Limitations
 
-- A portfolio prototype with a small synthetic dataset and local execution;
-  temporary sharing is not a managed production deployment. Operational records
+- A portfolio prototype with a small synthetic dataset and local execution.
+  Operational records
   are synthetic SQLite records, with no connection to a live fund-administration
   system.
 - Reusing an existing vector store does not synchronize changes to local documents.
@@ -206,18 +218,19 @@ and vector stores, SQLite, python-dotenv, and Gradio.
 - Responses and tool selection are model-driven. Instructions request source
   citations and acknowledgement of missing data; they do not guarantee factual
   or citation correctness.
-- No evaluation or regression harness is implemented. `test_search.py` is a
-  manual retrieval inspection script, not an automated test suite. Dependencies
+- Evaluations check raw output, numeric amounts, and tool calls across repeated
+  trials; they do not establish whether a cited source supports a claim.
+  `test_search.py` remains a manual retrieval inspection script. Dependencies
   are currently unpinned.
 
 ## What This Project Demonstrates
 
 - Scoping a private-markets operational task into a working local briefing
   application with concrete data requirements and example requests.
-- Connecting a user interface, async agent orchestration and MCP tools across
+- Connecting a CLI, async agent orchestration and MCP tools across
   the application workflow.
 - Designing context from two sources: deterministic financial records and
   retrieved investor documents, with source metadata preserved for inspection.
-- Reusing the same agent entry point across command-line and browser interfaces.
+- Separating the agent workflow from citation presentation and future clients.
 - Documenting setup, dataset coverage and limitations so another developer can
   run and inspect the prototype with their own credentials.
