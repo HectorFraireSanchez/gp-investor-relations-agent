@@ -204,10 +204,25 @@ It uses the standard asyncio loop on other platforms. Without reload,
 
 Open `http://localhost:5173`. The Vite server uses a fixed port so it matches the
 API's local CORS allowlist (`localhost:5173` and `127.0.0.1:5173`). Requests default
-to `http://127.0.0.1:8000`; to change that origin, copy `frontend/.env.example` to
+to `http://localhost:8000`; to change that origin, copy `frontend/.env.example` to
 `frontend/.env.local`, set `VITE_API_BASE_URL`, and restart Vite. Only the public
 API origin belongs there. OpenAI credentials stay in the repository-root `.env`
 on the Python backend and must never appear in `VITE_` variables.
+
+The API client sends requests directly; there is no Vite development proxy.
+For a deployed backend, set `VITE_API_BASE_URL` to its public base URL **before
+building the frontend**. Vite embeds this value in the build, so changing it
+requires rebuilding (or restarting Vite during development).
+
+The backend reads `CORS_ALLOW_ORIGINS` as a comma-separated list of exact frontend
+origins. It defaults to the two local origins above; add the real frontend origin
+when deploying and restart the backend. No wildcard or production origin is
+enabled by default. Only GET/POST and the Content-Type request header are allowed.
+
+`GET http://localhost:8000/health` returns `{"status":"ok"}` without calling the
+agent or OpenAI. Normal application startup still initializes the document store
+before accepting requests; this endpoint reports service liveness, not upstream
+API health.
 
 `POST /api/briefings` accepts `{"prompt": "Prepare me for Redwood."}` and returns
 the existing `RenderedResponse` as JSON: `answer`, `citations` (each with `number`,

@@ -1,9 +1,27 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { generateBriefing } from './briefings'
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
+  vi.resetModules()
+})
 
 describe('briefing transport', () => {
+  it.each([
+    [undefined, 'http://localhost:8000/api/briefings'],
+    ['', 'http://localhost:8000/api/briefings'],
+    ['  https://api.example.test/service///  ', 'https://api.example.test/service/api/briefings'],
+  ])('uses the configured API base URL (%s)', async (configured, expected) => {
+    vi.stubEnv('VITE_API_BASE_URL', configured)
+    vi.resetModules()
+    const { generateBriefing: configuredClient } = await import('./briefings')
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ answer: '', citations: [], invalid_source_ids: [] })))
+    vi.stubGlobal('fetch', fetch)
+    await configuredClient('Prepare Redwood')
+    expect(fetch).toHaveBeenCalledWith(expected, expect.objectContaining({ method: 'POST' }))
+  })
+
   it('posts the prompt and returns the response unchanged', async () => {
     const result = { answer: 'Answer [8]', citations: [], invalid_source_ids: [] }
     const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify(result)))

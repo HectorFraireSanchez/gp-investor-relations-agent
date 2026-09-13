@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 import sys
 from contextlib import asynccontextmanager
 
@@ -16,6 +17,14 @@ from backend.service import generate_briefing
 from backend.setup_documents import ensure_vector_store
 
 logger = logging.getLogger(__name__)
+load_dotenv(ENV_PATH)
+
+
+def get_cors_origins() -> list[str]:
+    """Read an explicit, comma-separated backend allowlist at application startup."""
+    return [origin.strip() for origin in os.environ.get(
+        "CORS_ALLOW_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
+    ).split(",") if origin.strip()]
 
 
 def create_event_loop() -> asyncio.AbstractEventLoop:
@@ -36,10 +45,15 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Northstar Investor Intelligence", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-    allow_methods=["POST"],
+    allow_origins=get_cors_origins(),
+    allow_methods=["GET", "POST"],
     allow_headers=["Content-Type"],
 )
+
+
+@app.get("/health")
+async def health() -> dict[str, str]:
+    return {"status": "ok"}
 
 
 class BriefingRequest(BaseModel):

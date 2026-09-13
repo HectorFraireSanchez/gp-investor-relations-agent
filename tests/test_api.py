@@ -1,4 +1,5 @@
 import asyncio
+import os
 import sys
 import unittest
 from dataclasses import asdict
@@ -15,6 +16,21 @@ class ApiTests(unittest.TestCase):
         self.setup = self.enterContext(patch.object(api, "ensure_vector_store"))
         self.generate = self.enterContext(patch.object(api, "generate_briefing", AsyncMock()))
         self.client = self.enterContext(TestClient(api.app))
+
+    def test_health_does_not_call_agent_or_document_setup(self):
+        self.setup.reset_mock()
+        response = self.client.get("/health", headers={"Origin": "http://localhost:5173"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"status": "ok"})
+        self.assertEqual(response.headers["access-control-allow-origin"], "http://localhost:5173")
+        self.setup.assert_not_called()
+        self.generate.assert_not_awaited()
+
+    def test_cors_origins_can_be_configured_without_a_wildcard(self):
+        with patch.dict(os.environ, {"CORS_ALLOW_ORIGINS": " http://localhost:5173, https://frontend.example.test, "}):
+            self.assertEqual(api.get_cors_origins(), ["http://localhost:5173", "https://frontend.example.test"])
+        with patch.dict(os.environ, {"CORS_ALLOW_ORIGINS": ""}):
+            self.assertEqual(api.get_cors_origins(), [])
 
     def test_validation_never_calls_service(self):
         for body in ({}, {"prompt": ""}, {"prompt": " \n "}, {"prompt": 42},
