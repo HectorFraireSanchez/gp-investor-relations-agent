@@ -6,15 +6,15 @@ import sys
 from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
-from pathlib import Path
 
 from agents import Agent, Runner
 from agents.items import RunItem, ToolCallOutputItem
 from agents.mcp import MCPServerStdio, MCPToolCustomDataContext
 from dotenv import load_dotenv
 
-ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / ".env")
+from backend.paths import ENV_PATH, ROOT_DIR
+
+load_dotenv(ENV_PATH)
 CITATION_PATTERN = re.compile(r"\[\[cite:([^\[\]]*)\]\]")
 
 
@@ -100,13 +100,12 @@ def collect_sources(items: list[RunItem]) -> list[dict]:
 
 
 async def run_agent(prompt: str) -> AgentResponse:
-    server_path = ROOT_DIR / "mcp_server.py"
-
     async with MCPServerStdio(
         name="Northstar Investor Operations",
         params={
             "command": sys.executable,
-            "args": [str(server_path)],
+            "args": ["-m", "backend.mcp_server"],
+            "cwd": str(ROOT_DIR),
             "env": {
                 "OPENAI_API_KEY": os.environ["OPENAI_API_KEY"],
                 "OPENAI_VECTOR_STORE_ID": os.environ["OPENAI_VECTOR_STORE_ID"],

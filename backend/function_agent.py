@@ -1,14 +1,14 @@
 import json
-from pathlib import Path
 
 from agents import Agent, Runner
 from agents.decorators import tool
 from dotenv import load_dotenv
 
-import domain
+from backend import domain
+from backend.paths import ENV_PATH
 
 
-load_dotenv(Path(__file__).parent / ".env")
+load_dotenv(ENV_PATH)
 
 
 @tool

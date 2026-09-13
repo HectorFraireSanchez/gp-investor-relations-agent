@@ -35,11 +35,12 @@ AMOUNT_PATTERN = re.compile(
     re.IGNORECASE | re.VERBOSE,
 )
 
-# Direct script execution puts evals/ on sys.path; the agent lives one level up.
-sys.path.insert(0, str(EVALS_DIR.parent))
+# Keep direct script execution working; module execution already has the repo root.
+if __package__ in (None, ""):
+    sys.path.insert(0, str(EVALS_DIR.parent))
 from agents.items import ToolCallItem
 
-from mcp_agent import run_agent
+from backend.mcp_agent import run_agent
 
 
 def extract_amounts(output: str) -> set[Decimal]:

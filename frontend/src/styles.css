@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+@theme {
+  --color-canvas: #f7f7f3;
+  --color-ink: #243b34;
+  --color-muted: #6a756f;
+  --color-forest: #244f41;
+  --color-line: #e2e6df;
+  --font-sans: "Segoe UI", Arial, sans-serif;
+  --font-serif: Georgia, "Times New Roman", serif;
+}
+
+@layer base {
+  body { @apply m-0 bg-canvas font-sans text-ink antialiased; }
+  button { @apply cursor-pointer; }
+  button:disabled { @apply cursor-not-allowed opacity-50; }
+  :focus-visible { outline: 2px solid #3f7b62; outline-offset: 4px; }
+  textarea:focus-visible { outline-offset: 1px; }
+  ::selection { background: #dcebdc; }
+}
+
+@layer components {
+  .eyebrow { @apply text-[10px] font-semibold uppercase tracking-[0.17em] text-muted; }
+  .primary-button { @apply flex min-h-11 items-center justify-center gap-3 rounded-lg bg-forest px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-ink disabled:hover:bg-forest; }
+  .secondary-button { @apply inline-flex min-h-10 items-center justify-center gap-3 rounded-lg border border-line bg-white px-4 py-2 text-sm font-medium text-ink hover:bg-canvas; }
+  .example-button { @apply flex min-h-10 items-center justify-between gap-2 rounded-md border border-line px-3 py-2 text-left text-xs text-muted transition-colors hover:border-forest/30 hover:bg-canvas hover:text-forest; }
+  .source-number { @apply size-7 shrink-0 items-center justify-center rounded-md border border-[#d9e6dd] bg-[#edf4ee] text-xs font-semibold tabular-nums text-forest; display: inline-flex; }
+  .source-row { @apply flex w-full items-center gap-3 rounded-lg border border-line px-3 py-3 transition-colors hover:border-forest/30 hover:bg-canvas; }
+  .citation-button { @apply mx-0.5 inline rounded border border-[#d9e6dd] bg-[#edf4ee] px-1.5 py-0.5 align-baseline text-[11px] font-semibold leading-5 tabular-nums text-forest hover:border-forest hover:bg-[#dfece1]; }
+  .icon-button { @apply flex size-9 items-center justify-center rounded-md text-muted hover:bg-canvas hover:text-ink; }
+  .skeleton { @apply rounded bg-[#edf0eb]; }
+  .skip-link { @apply sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded focus:bg-white focus:p-3; }
+}
+
+.briefing-markdown { font-size: 14px; line-height: 1.9; color: #425149; overflow-wrap: anywhere; }
+.briefing-markdown > :first-child { margin-top: 0; }
+.briefing-markdown h1, .briefing-markdown h2, .briefing-markdown h3, .briefing-markdown h4 { color: #243b34; line-height: 1.4; margin: 1.75em 0 .7em; }
+.briefing-markdown h1 { font: 28px/1.35 Georgia, serif; letter-spacing: -.02em; }
+.briefing-markdown h2 { font: 23px/1.4 Georgia, serif; }
+.briefing-markdown h3 { font-size: 16px; font-weight: 600; }
+.briefing-markdown h4 { font-size: 14px; font-weight: 600; }
+.briefing-markdown p { margin: .9em 0; }
+.briefing-markdown strong { color: #243b34; font-weight: 600; }
+.briefing-markdown ul, .briefing-markdown ol { padding-left: 1.4em; margin: .8em 0; }
+.briefing-markdown ul { list-style: disc; }
+.briefing-markdown ol { list-style: decimal; }
+.briefing-markdown li { padding-left: .25em; margin: .4em 0; }
+.briefing-markdown li::marker { color: #8a9c90; }
+.briefing-markdown hr { border: 0; border-top: 1px solid #e2e6df; margin: 1.8em 0; }
+.briefing-markdown blockquote { border-left: 2px solid #afc6b5; padding-left: 1em; margin: 1em 0; }
+.briefing-markdown a { color: #244f41; text-decoration: underline; text-underline-offset: 3px; }
+.briefing-markdown pre { white-space: pre-wrap; background: #f7f7f3; padding: 1em; border-radius: 6px; }
+.briefing-markdown code { font-size: 12px; }
+.table-scroll { overflow-x: auto; }
+.briefing-markdown table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 1em 0; }
+.briefing-markdown th, .briefing-markdown td { border-bottom: 1px solid #e2e6df; padding: .65em .8em; text-align: left; vertical-align: top; }
+.briefing-markdown th { background: #f7f7f3; font-weight: 600; }
+@media (prefers-reduced-motion: no-preference) {
+  .source-sheet { animation: enter-sheet 160ms ease-out; }
+  @keyframes enter-sheet { from { transform: translateX(24px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+}

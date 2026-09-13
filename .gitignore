@@ -3,3 +3,8 @@
 __pycache__/
 .pytest_cache/
 evals/results/
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+frontend/.env.*.local
+frontend/test-results/

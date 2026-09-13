@@ -14,10 +14,10 @@ records, side-letter obligations and prior discussion points before an investor
 meeting. Its scope is read-only briefing preparation for an IR professional to
 review.
 
-Pass a natural-language request to the CLI to receive a briefing with numbered
-citations and a source list. The frontend-independent Python service returns the
-same answer and full source metadata for future clients. No web UI or HTTP API
-is currently included.
+Use the Northstar web application to prepare a briefing, then open its numbered
+citations to inspect the underlying source metadata. A React/TypeScript/Vite page
+calls a small FastAPI transport layer; the existing Python service supplies the
+answer and full source metadata. The CLI remains available for the same workflow.
 
 Example questions supported by the included data:
 
@@ -32,35 +32,41 @@ Example questions supported by the included data:
 
 ```mermaid
 flowchart TD
-    CLI["cli.py"] --> SERVICE["service.py<br/>async generate_briefing(prompt)"]
-    SERVICE --> A["mcp_agent.py<br/>async run_agent(prompt)"]
-    A <-->|MCP over stdio| M["mcp_server.py<br/>Structured and document tools"]
-    M <--> D["domain.py<br/>SQLite queries"]
-    D <--> DB[("data/northstar.db<br/>Investors, positions, capital calls")]
+    WEB["React + TypeScript + Vite<br/>Tailwind CSS"] -->|HTTP/JSON| API["backend/api.py<br/>FastAPI"]
+    API --> SERVICE
+    CLI["backend/cli.py"] --> SERVICE["backend/service.py<br/>async generate_briefing(prompt)"]
+    SERVICE --> A["backend/mcp_agent.py<br/>async run_agent(prompt)"]
+    A <-->|MCP over stdio| M["backend/mcp_server.py<br/>Structured and document tools"]
+    M <--> D["backend/domain.py<br/>SQLite queries"]
+    D <--> DB[("backend/data/northstar.db<br/>Investors, positions, capital calls")]
     M <--> S["search_investor_documents<br/>Semantic retrieval"]
     S <--> V["OpenAI vector store"]
-    CLI -.->|At startup| SETUP["setup_documents.py<br/>ensure_vector_store()"]
+    CLI -.->|At startup| SETUP["backend/setup_documents.py<br/>ensure_vector_store()"]
+    API -.->|At startup| SETUP
     F["documents/<br/>Side letters and meeting notes"] -.->|Upload when creating a store| SETUP
     SETUP -.->|Create or reuse| V
     SETUP -.->|Persist new store ID| ENV[".env"]
     A --> RAW["AgentResponse<br/>Answer, provenance, validation, SDK items"]
-    RAW --> R["citations.py<br/>Deterministic citation rendering"]
+    RAW --> R["backend/citations.py<br/>Deterministic citation rendering"]
     R --> SERVICE
     SERVICE --> RESULT["RenderedResponse<br/>Answer, citations, invalid source IDs"]
     RESULT --> CLI
+    RESULT --> API
+    API --> WEB
 ```
 
-For each request, `mcp_agent.py` starts `mcp_server.py` as a subprocess using the
-same Python interpreter. The OpenAI Agents SDK discovers and invokes the
+For each request, `backend/mcp_agent.py` starts `backend/mcp_server.py` as a subprocess using the
+same Python interpreter via `python -m backend.mcp_server`, with its working
+directory explicitly set to the repository root. The OpenAI Agents SDK discovers and invokes the
 server's tools over standard input/output; the MCP connection closes after the
 run. Structured results and retrieved document excerpts return to the agent for
 synthesis.
 
-Structured operational data flows from SQLite through `domain.py` functions to
+Structured operational data flows from SQLite through `backend/domain.py` functions to
 MCP tools. Unstructured investor documents remain in `documents/` and are uploaded
 to an OpenAI vector store for semantic retrieval through an MCP tool. The agent
-chooses tools and combines their results; the CLI calls the shared service to run
-the workflow and render its citations.
+chooses tools and combines their results; both the CLI and HTTP API call the
+shared service to run the workflow and render its citations.
 
 For a meeting-preparation request, the agent can resolve the investor, retrieve
 positions and capital calls, search for relevant side-letter and meeting-note
@@ -70,8 +76,8 @@ arguments; the tool implementations determine how the requested data is retrieve
 ## Design Decisions
 
 - **Structured facts through deterministic tools.** `find_investor`,
-  `get_positions`, and `get_capital_calls` call `domain.py` functions that query
-  `data/northstar.db` using parameterized SQL. The model chooses which capabilities
+  `get_positions`, and `get_capital_calls` call `backend/domain.py` functions that query
+  `backend/data/northstar.db` using parameterized SQL. The model chooses which capabilities
   to invoke; application code supplies the authoritative values for this demo. This keeps financial data
   access behind domain functions rather than asking the model to infer balances
   from prose or giving it arbitrary data access.
@@ -90,16 +96,26 @@ arguments; the tool implementations determine how the requested data is retrieve
   returned during that run. Python assigns numbers in order of first citation,
   reuses numbers for repeated sources, and displays invalid references as
   `[citation unavailable]`. This validates source identity, not claim support.
-- **Reuse across entry points.** `service.generate_briefing(prompt)` returns a
+- **Reuse across entry points.** `backend.service.generate_briefing(prompt)` returns a
   `RenderedResponse` with `answer`, `citations`, and `invalid_source_ids`. Each
   citation preserves the full authoritative source object. Use
   `dataclasses.asdict(result)` for a JSON-ready dictionary. The CLI uses this
-  boundary; evaluations continue to inspect the raw `run_agent()` response.
+  boundary, as does the web API; evaluations continue to inspect the raw
+  `run_agent()` response.
+- **Citation presentation in React.** The page renders Markdown with
+  `react-markdown` and GFM support, turning matching `[n]` text references into
+  buttons for the backend's exact citation object. It never renumbers or repairs
+  citations. Code and links remain unchanged; raw HTML is not rendered. A
+  shadcn-style Radix Dialog sheet supplies keyboard dismissal and focus handling.
+  Labels come only from source metadata: record keys, fund names, or humanized
+  filenames and valid dates encoded in them. Investor metadata currently has an
+  ID but no name, so its label is `Investor Record — INV-001`. Missing provenance
+  is not invented; the source drawer displays the fields actually returned.
 
 ## Data and Documents
 
 **All business data is synthetic. Northstar Capital and every investor are
-fictional.** [data/northstar.db](data/northstar.db) stores investor IDs, names and
+fictional.** [backend/data/northstar.db](backend/data/northstar.db) stores investor IDs, names and
 types; positions in Northstar Growth Fund II with commitment, contributed and
 unfunded amounts; and capital calls with amounts, due dates and statuses.
 
@@ -111,35 +127,45 @@ unfunded amounts; and capital calls with amounts, due dates and statuses.
 
 The four Markdown documents contain reporting obligations and meeting discussion
 context. To inspect an answer, compare financial values with the SQLite database
-(or its synthetic seed data in [create_database.py](create_database.py)) and
+(or its synthetic seed data in [backend/create_database.py](backend/create_database.py)) and
 document-derived claims with the cited files in [documents/](documents/).
 The agent is instructed to acknowledge unavailable information.
 
 ## Project Structure
 
 ```text
-cli.py               Local command-line entry point and document-store setup
-service.py           Frontend-independent briefing service
-citations.py         Deterministic rendering of validated citation references
-mcp_agent.py         Async agent entry point, instructions and MCP client setup
-mcp_server.py        MCP tools for structured records and document search
-domain.py            Domain/data-access functions that query SQLite
-data/northstar.db     SQLite database containing synthetic operational records
-create_database.py   Optional database recreation/reset with synthetic seed data
-setup_documents.py   Reuses or creates a vector store; saves new ID to .env
-test_search.py       Manual vector-store search inspection; loads .env
-function_agent.py    Earlier direct function-tool example, outside the service path
-tests/               Offline citation-renderer, service, and CLI tests
-evals/               Raw agent evaluations with multiple trials and saved results
-documents/           Two synthetic side letters and two meeting-note files
-requirements.txt     Python dependencies
-.env.example         Empty configuration placeholders to copy into .env
-.gitignore           Excludes the virtual environment, .env and Python caches
+backend/
+  __init__.py          Python application package
+  api.py               FastAPI validation, startup, and service transport
+  cli.py               Command-line entry point and document-store setup
+  service.py           Frontend-independent briefing service
+  citations.py         Deterministic rendering of validated citations
+  mcp_agent.py         Async agent entry point and MCP client setup
+  mcp_server.py        MCP tools for structured records and document search
+  domain.py            SQLite data-access functions
+  paths.py             Shared backend and repository resource paths
+  data/northstar.db    Existing synthetic operational records
+  create_database.py   Optional database recreation/reset with seed data
+  setup_documents.py   Reuses or creates a store; saves new ID to root .env
+  test_search.py       Manual vector-store search inspection
+  function_agent.py    Earlier direct function-tool example
+frontend/              React/TypeScript/Vite browser application
+documents/             Synthetic side letters and meeting notes
+evals/                 Raw agent evaluations and generated results
+tests/                 Offline Python tests
+requirements.txt       Python dependencies
+.env.example           Configuration placeholders; .env remains at root
+.gitignore             Excludes environments, secrets, and generated files
 ```
+
+All shared paths are resolved in `backend/paths.py` from the package location.
+The root `.env` and `documents/` stay in place; SQLite lives in `backend/data/`.
+Run Python entry points from the repository root with `python -m backend.<module>`,
+including `backend.setup_documents` and the manual `backend.test_search`.
 
 ## Running Locally
 
-Use Python 3.10+ and PowerShell:
+Use Python 3.10+, Node.js 22.12+ (Node 22 LTS recommended), and PowerShell:
 
 ```powershell
 git clone https://github.com/HectorFraireSanchez/gp-investor-relations-agent.git
@@ -157,13 +183,47 @@ OPENAI_API_KEY=your-openai-api-key
 OPENAI_VECTOR_STORE_ID=
 ```
 
-Start the application:
+Start the web backend from the repository root with the Python environment active:
 
 ```powershell
-python cli.py "Prep me for my meeting with Redwood Family Office."
+python -m uvicorn backend.api:app --reload --loop backend.api:create_event_loop
 ```
 
-At startup, `cli.py` calls `ensure_vector_store()` from `setup_documents.py` once.
+In a second terminal, start the frontend:
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+The explicit loop factory keeps MCP subprocesses working with Uvicorn's reload
+mode on Windows, where its default reload loop does not support subprocesses.
+It uses the standard asyncio loop on other platforms. Without reload,
+`python -m uvicorn backend.api:app` also works on Windows.
+
+Open `http://localhost:5173`. The Vite server uses a fixed port so it matches the
+API's local CORS allowlist (`localhost:5173` and `127.0.0.1:5173`). Requests default
+to `http://127.0.0.1:8000`; to change that origin, copy `frontend/.env.example` to
+`frontend/.env.local`, set `VITE_API_BASE_URL`, and restart Vite. Only the public
+API origin belongs there. OpenAI credentials stay in the repository-root `.env`
+on the Python backend and must never appear in `VITE_` variables.
+
+`POST /api/briefings` accepts `{"prompt": "Prepare me for Redwood."}` and returns
+the existing `RenderedResponse` as JSON: `answer`, `citations` (each with `number`,
+`source_id`, and the complete `source` object), and `invalid_source_ids`. Empty,
+non-string, blank, or over-10,000-character prompts return HTTP 422. Generation
+errors return a generic HTTP 502, with diagnostics logged on the backend. API
+documentation is available at `http://127.0.0.1:8000/docs`.
+
+The CLI is also available:
+
+```powershell
+python -m backend.cli "Prep me for my meeting with Redwood Family Office."
+```
+
+At startup, the API lifespan (or `backend/cli.py`) calls `ensure_vector_store()` from
+`backend/setup_documents.py` once per process, before handling requests.
 It reuses the configured store if it exists. If no ID is configured, or OpenAI
 reports that the configured store was not found, it creates a store, uploads the
 files in `documents/`, waits for indexing, and saves `OPENAI_VECTOR_STORE_ID` in
@@ -174,13 +234,13 @@ environment-variable exports are needed.
 The CLI prints the rendered answer and its numbered source list, then exits.
 The MCP server starts automatically; no separate server command is needed.
 
-For later runs, activate `.venv` and run `python cli.py "Your question"`; configuration is loaded
+For later runs, activate `.venv` and run `python -m backend.cli "Your question"`; configuration is loaded
 from `.env`. That file is intentionally git-ignored, and `.env.example` contains
 placeholders only. Each user supplies their own OpenAI credentials and store.
 
-Normal startup uses the existing `data/northstar.db`. To recreate a missing
+Normal startup uses the existing `backend/data/northstar.db`. To recreate a missing
 database or reset it to the synthetic seed data, optionally run
-`python create_database.py`. This deletes and replaces the existing database;
+`python -m backend.create_database`. This deletes and replaces the existing database;
 the app does not initialize SQLite automatically.
 
 OpenAI API usage may incur charges and is
@@ -198,13 +258,25 @@ Run raw agent evaluations with API access and a configured vector store:
 python evals/run_evals.py
 ```
 
-Future clients can call `await service.generate_briefing(prompt)` after loading
-configuration and ensuring the document store at application startup.
+Check the frontend without API access:
+
+```powershell
+cd frontend
+npm test
+npm run typecheck
+npm run build
+```
+
+The frontend tests cover citation identity/repetition, source labels, source
+drawer interaction and focus, request states, and HTTP errors. The production
+build goes into `frontend/dist/`; serving/deploying it is outside this local
+two-process setup. The raw evaluation command above remains unchanged.
 
 ## Technology
 
-Python, OpenAI Agents SDK, Model Context Protocol (MCP) Python SDK, OpenAI API
-and vector stores, SQLite, and python-dotenv.
+React, TypeScript, Vite, Tailwind CSS, Radix Dialog (shadcn-style sheet),
+react-markdown, FastAPI, Uvicorn, Python, OpenAI Agents SDK, Model Context Protocol
+(MCP) Python SDK, OpenAI API and vector stores, SQLite, and python-dotenv.
 
 ## Current Scope and Limitations
 
@@ -220,14 +292,17 @@ and vector stores, SQLite, and python-dotenv.
   or citation correctness.
 - Evaluations check raw output, numeric amounts, and tool calls across repeated
   trials; they do not establish whether a cited source supports a claim.
-  `test_search.py` remains a manual retrieval inspection script. Dependencies
-  are currently unpinned.
+  `backend/test_search.py` remains a manual retrieval inspection script. Python dependencies
+  are currently unpinned; frontend dependency versions are recorded in its lockfile.
+- Requests are non-streaming and briefings are kept only in page memory. Reloading
+  clears them. The web layer adds no authentication, conversation history, or
+  deployment infrastructure; keep this local prototype on the default loopback hosts.
 
 ## What This Project Demonstrates
 
 - Scoping a private-markets operational task into a working local briefing
   application with concrete data requirements and example requests.
-- Connecting a CLI, async agent orchestration and MCP tools across
+- Connecting a web page, HTTP service, CLI, async agent orchestration and MCP tools across
   the application workflow.
 - Designing context from two sources: deterministic financial records and
   retrieved investor documents, with source metadata preserved for inspection.

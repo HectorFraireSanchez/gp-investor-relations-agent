@@ -3,7 +3,7 @@
 from copy import deepcopy
 from dataclasses import dataclass
 
-from mcp_agent import AgentResponse, CITATION_PATTERN
+from backend.mcp_agent import AgentResponse, CITATION_PATTERN
 
 
 @dataclass

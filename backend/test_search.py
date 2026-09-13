@@ -1,12 +1,13 @@
 import os
-from pathlib import Path
 
 from dotenv import load_dotenv
 from openai import OpenAI
 
+from backend.paths import ENV_PATH
+
 
 def main():
-    load_dotenv(Path(__file__).parent / ".env")
+    load_dotenv(ENV_PATH)
     client = OpenAI()
 
     vector_store_id = os.environ["OPENAI_VECTOR_STORE_ID"]

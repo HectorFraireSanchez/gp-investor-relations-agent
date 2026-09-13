@@ -3,8 +3,8 @@ import json
 import unittest
 from dataclasses import asdict
 
-from citations import render_citations
-from mcp_agent import AgentResponse
+from backend.citations import render_citations
+from backend.mcp_agent import AgentResponse
 
 
 class CitationRenderingTests(unittest.TestCase):

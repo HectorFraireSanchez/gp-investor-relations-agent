@@ -1,13 +1,10 @@
 import os
-from pathlib import Path
 
 from dotenv import load_dotenv, set_key
 from openai import NotFoundError, OpenAI
 
 
-ROOT_DIR = Path(__file__).parent
-DOCUMENTS_DIR = ROOT_DIR / "documents"
-ENV_PATH = ROOT_DIR / ".env"
+from backend.paths import DOCUMENTS_DIR, ENV_PATH
 
 load_dotenv(ENV_PATH)
 

@@ -3,10 +3,9 @@ import io
 import unittest
 from unittest.mock import AsyncMock, patch
 
-import cli
-import service
-from citations import RenderedResponse
-from mcp_agent import AgentResponse
+from backend import cli, service
+from backend.citations import RenderedResponse
+from backend.mcp_agent import AgentResponse
 
 
 class ServiceTests(unittest.IsolatedAsyncioTestCase):

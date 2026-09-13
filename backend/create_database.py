@@ -1,9 +1,8 @@
 import sqlite3
 from contextlib import closing
-from pathlib import Path
 
 
-DB_PATH = Path(__file__).parent / "data" / "northstar.db"
+from backend.paths import DB_PATH
 
 SCHEMA_AND_DATA = """
 CREATE TABLE investors (
