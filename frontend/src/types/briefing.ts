@@ -21,3 +21,7 @@ export interface RenderedResponse {
   citations: Citation[]
   invalid_source_ids: string[]
 }
+
+export interface BriefingResponse extends RenderedResponse {
+  conversation_id: string
+}

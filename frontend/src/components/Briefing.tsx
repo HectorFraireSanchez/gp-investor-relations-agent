@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react'
+import { memo, useId, useMemo } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Element, Root, RootContent } from 'hast'
@@ -35,6 +35,7 @@ function citationReferences(numbers: Set<number>) {
 }
 
 export const Briefing = memo(function Briefing({ response, onSelect }: { response: RenderedResponse; onSelect: (citation: Citation) => void }) {
+  const sourcesHeadingId = useId()
   const citations = useMemo(() => new Map(response.citations.map((citation) => [citation.number, citation])), [response])
   const plugin = useMemo(() => citationReferences(new Set(citations.keys())), [citations])
   return <>
@@ -54,9 +55,9 @@ export const Briefing = memo(function Briefing({ response, onSelect }: { respons
     {response.invalid_source_ids.length > 0 && <p className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
       Some references were unavailable. Review those claims before using this briefing.
     </p>}
-    <section className="mt-10 border-t border-line pt-7" aria-labelledby="sources-heading">
+    <section className="mt-10 border-t border-line pt-7" aria-labelledby={sourcesHeadingId}>
       <div className="mb-4 flex items-center justify-between gap-3">
-        <h3 id="sources-heading" className="text-sm font-semibold text-ink">Sources</h3>
+        <h3 id={sourcesHeadingId} className="text-sm font-semibold text-ink">Sources</h3>
         <span className="text-xs text-muted">{response.citations.length} referenced</span>
       </div>
       {response.citations.length === 0 ? <p className="text-sm text-muted">No sources were cited in this response.</p> :

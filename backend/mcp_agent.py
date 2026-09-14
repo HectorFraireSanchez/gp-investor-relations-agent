@@ -1,4 +1,3 @@
-import asyncio
 import json
 import os
 import re
@@ -7,8 +6,8 @@ from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
 
-from agents import Agent, Runner
-from agents.items import RunItem, ToolCallOutputItem
+from agents import Agent, RunConfig, Runner, Session
+from agents.items import RunItem, ToolCallOutputItem, TResponseInputItem
 from agents.mcp import MCPServerStdio, MCPToolCustomDataContext
 from dotenv import load_dotenv
 
@@ -99,7 +98,42 @@ def collect_sources(items: list[RunItem]) -> list[dict]:
     return list(sources.values())
 
 
-async def run_agent(prompt: str) -> AgentResponse:
+def _prepare_session_input(
+    history_items: list[TResponseInputItem], new_items: list[TResponseInputItem]
+) -> list[TResponseInputItem]:
+    """Copy ordinary old dialogue, strip old assistant citations, then append new input."""
+    history = []
+    for item in history_items:
+        if item.get("type", "message") != "message" or item.get("role") not in (
+            "user", "assistant"
+        ):
+            continue
+        message = deepcopy(item)
+        if message["role"] == "assistant":
+            content = message.get("content")
+            if isinstance(content, str):
+                message["content"] = CITATION_PATTERN.sub("", content)
+            elif isinstance(content, list):
+                for part in content:
+                    if part.get("type") in ("input_text", "output_text"):
+                        part["text"] = CITATION_PATTERN.sub("", part["text"])
+        history.append(message)
+    return history + new_items
+
+
+def _session_input_callback(
+    history_items: list[TResponseInputItem], new_items: list[TResponseInputItem]
+) -> list[TResponseInputItem]:
+    prepared = _prepare_session_input(history_items, new_items)
+    # SDK 0.22.2 gives callbacks a private deep copy of session history, then
+    # fingerprints that list AFTER the callback to identify old versus new items.
+    # Replace only this private list, not its original objects or stored history,
+    # so citation-stripped copies are not mistakenly persisted as new messages.
+    history_items[:] = prepared[:len(prepared) - len(new_items)]
+    return prepared
+
+
+async def run_agent(prompt: str, *, session: Session | None = None) -> AgentResponse:
     async with MCPServerStdio(
         name="Northstar Investor Operations",
         params={
@@ -120,6 +154,9 @@ async def run_agent(prompt: str) -> AgentResponse:
             instructions=(
                 "You assist investor relations professionals at Northstar Capital. "
                 "Use MCP tools to retrieve investor information rather than inventing facts. "
+                "Use prior conversation only to understand references and user intent, "
+                "not as authoritative factual evidence. Re-query the appropriate MCP tools "
+                "for material factual claims on each run and cite sources returned in that run. "
                 "Use structured tools such as find_investor, get_positions and get_capital_calls "
                 "for structured financial information. "
                 "Use search_investor_documents for unstructured information such as "
@@ -145,7 +182,13 @@ async def run_agent(prompt: str) -> AgentResponse:
             mcp_servers=[server],
         )
 
-        result = await Runner.run(agent, prompt)
+        if session is None:
+            result = await Runner.run(agent, prompt)
+        else:
+            result = await Runner.run(
+                agent, prompt, session=session,
+                run_config=RunConfig(session_input_callback=_session_input_callback),
+            )
         sources = collect_sources(result.new_items)
         cited_source_ids, invalid_source_ids = validate_citations(result.final_output, sources)
 
@@ -156,25 +199,3 @@ async def run_agent(prompt: str) -> AgentResponse:
             cited_source_ids=cited_source_ids,
             invalid_source_ids=invalid_source_ids,
         )
-
-
-async def main():
-    prompt = """
-    Prepare me for a meeting with Redwood Family Office.
-
-    Include:
-    - investment position
-    - outstanding capital calls
-    - special reporting obligations
-    - most recent meeting discussion
-
-    Cite the source for information taken from documents.
-    """
-
-    result = await run_agent(prompt)
-
-    print(result.final_output)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())

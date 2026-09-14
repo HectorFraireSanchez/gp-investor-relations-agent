@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 
 from backend import api
-from backend.citations import RenderedResponse
+from backend.service import BriefingResult
 
 
 class ApiTests(unittest.TestCase):
@@ -25,6 +25,27 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.headers["access-control-allow-origin"], "http://localhost:5173")
         self.setup.assert_not_called()
         self.generate.assert_not_awaited()
+
+    def test_conversation_id_validation_never_calls_service(self):
+        for value in ("", " \n ", 42, True, [], {}, "x" * 257):
+            with self.subTest(value=value):
+                response = self.client.post("/api/briefings", json={
+                    "prompt": "Follow up", "conversation_id": value,
+                })
+                self.assertEqual(response.status_code, 422)
+        self.generate.assert_not_awaited()
+
+    def test_conversation_id_is_optional_and_opaque(self):
+        for value in (None, "existing-id", " opaque-id ", "x" * 256):
+            with self.subTest(value=value):
+                result = BriefingResult(value or "new-id", "Answer", [], [])
+                self.generate.return_value = result
+                response = self.client.post("/api/briefings", json={
+                    "prompt": "Follow up", "conversation_id": value,
+                })
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json(), asdict(result))
+                self.generate.assert_awaited_with("Follow up", conversation_id=value)
 
     def test_cors_origins_can_be_configured_without_a_wildcard(self):
         with patch.dict(os.environ, {"CORS_ALLOW_ORIGINS": " http://localhost:5173, https://frontend.example.test, "}):
@@ -44,7 +65,7 @@ class ApiTests(unittest.TestCase):
         source = {"source_id": "db:investors:INV-001", "source_type": "database",
                   "database": "northstar.db", "table": "investors",
                   "record_key": {"investor_id": "INV-001"}, "extra": {"kept": True}}
-        result = RenderedResponse("Investor. [1] Again. [1] [citation unavailable]",
+        result = BriefingResult("new-id", "Investor. [1] Again. [1] [citation unavailable]",
                                   [{"number": 1, "source_id": source["source_id"], "source": source}],
                                   ["unknown"])
         self.generate.return_value = result
@@ -52,7 +73,7 @@ class ApiTests(unittest.TestCase):
             response = self.client.post("/api/briefings", json={"prompt": " Prepare Redwood "})
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json(), asdict(result))
-        self.generate.assert_awaited_with(" Prepare Redwood ")
+        self.generate.assert_awaited_with(" Prepare Redwood ", conversation_id=None)
         self.setup.assert_called_once()
 
     def test_errors_do_not_disclose_internal_details(self):
@@ -62,7 +83,7 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 502)
         self.assertNotIn("private", response.text)
         self.generate.side_effect = None
-        self.generate.return_value = RenderedResponse("Next request works", [], [])
+        self.generate.return_value = BriefingResult("new-id", "Next request works", [], [])
         self.assertEqual(self.client.post("/api/briefings", json={"prompt": "Again"}).status_code, 200)
 
     def test_local_cors_is_restricted(self):
