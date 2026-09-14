@@ -72,7 +72,7 @@ class McpPackageTests(unittest.IsolatedAsyncioTestCase):
         async def inspect_server(agent, prompt):
             server = agent.mcp_servers[0]
             names = {tool.name for tool in await server.list_tools()}
-            self.assertEqual(names, {"find_investor", "get_positions", "get_capital_calls", "search_investor_documents"})
+            self.assertEqual(names, {"find_investor", "list_investors", "get_positions", "get_capital_calls", "search_investor_documents"})
             result = await server.call_tool("find_investor", {"name": "Redwood"})
             self.assertFalse(result.is_error)
             # This installed SDK returns the MCP envelope as a JSON text block.
@@ -80,6 +80,20 @@ class McpPackageTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(payload["data"]["investor_id"], "INV-001")
             self.assertEqual(payload["sources"][0]["source_id"], "db:investors:INV-001")
             self.assertEqual(payload["sources"][0]["database"], "northstar.db")
+            listed = await server.call_tool("list_investors", {})
+            self.assertFalse(listed.is_error)
+            # List results arrive as one JSON text block per investor in this SDK.
+            records = [json.loads(block.text) for block in listed.content]
+            self.assertEqual([record["data"] for record in records], domain.list_investors())
+            self.assertEqual([record["data"]["investor_id"] for record in records], ["INV-003", "INV-002", "INV-001"])
+            for record in records:
+                investor_id = record["data"]["investor_id"]
+                self.assertEqual(record["sources"], [{
+                    "source_id": f"db:investors:{investor_id}",
+                    "source_type": "database", "database": "northstar.db",
+                    "schema": "main", "table": "investors",
+                    "record_key": {"investor_id": investor_id},
+                }])
             return SimpleNamespace(final_output="Checked MCP package", new_items=[])
 
         original = Path.cwd()

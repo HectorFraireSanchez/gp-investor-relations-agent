@@ -35,8 +35,23 @@ def _with_database_source(record: dict, table: str, key_fields: tuple[str, ...])
 
 
 @mcp.tool()
+def list_investors() -> list[dict]:
+    """Enumerate all Northstar investor records with provenance for list/browse requests.
+
+    For a particular investor named by the user, use find_investor instead.
+    """
+    return [
+        _with_database_source(record, "investors", ("investor_id",))
+        for record in domain.list_investors()
+    ]
+
+
+@mcp.tool()
 def find_investor(name: str) -> dict:
-    """Find an investor by name, returning data and source provenance."""
+    """Resolve one investor by name, returning data and source provenance.
+
+    Use the returned data.investor_id for get_positions and get_capital_calls.
+    """
     record = domain.find_investor(name)
     if record is None:
         return {"data": None, "sources": []}

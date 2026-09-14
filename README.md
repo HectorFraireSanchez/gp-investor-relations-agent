@@ -37,6 +37,7 @@ the hosted conversation; the app cannot reopen an earlier conversation yet.
 
 Example questions supported by the included data:
 
+- What are all the investors at Northstar?
 - Prepare me for a meeting with Redwood Family Office. Include its investment
   position, outstanding capital calls, special reporting obligations, and most
   recent meeting discussion.
@@ -116,9 +117,11 @@ Calling `run_agent(prompt)` without a session remains an independent one-shot ru
 
 ## Design Decisions
 
-- **Structured facts through deterministic tools.** `find_investor`,
-  `get_positions`, and `get_capital_calls` call `backend/domain.py` functions that query
-  `backend/data/northstar.db` using parameterized SQL. The model chooses which capabilities
+- **Structured facts through deterministic tools.** `list_investors` enumerates
+  all investor records in name order; `find_investor` resolves one investor by name.
+  These tools, plus `get_positions` and `get_capital_calls`, use `backend/domain.py`
+  to query `backend/data/northstar.db`, with parameterized filters for lookups.
+  The model chooses which capabilities
   to invoke; application code supplies the authoritative values for this demo. This keeps financial data
   access behind domain functions rather than asking the model to infer balances
   from prose or giving it arbitrary data access.
@@ -439,9 +442,10 @@ an initialized document store:
 python evals/run_evals.py
 ```
 
-The harness currently runs **8 cases with 5 sequential trials each**. Cases cover
+The harness currently runs **9 cases with 5 sequential trials each**. Cases cover
 positions, outstanding/paid calls, reporting requirements, meeting history,
-missing records, combined structured queries, and full briefing preparation.
+missing records, combined structured queries, full briefing preparation, and
+complete investor enumeration with all three investor sources retrieved and cited.
 Each trial calls `run_agent(prompt)` without a session. Trials remain independent,
 with no concurrency or retry loop, and do not perform the API's document setup.
 
@@ -450,6 +454,8 @@ with no concurrency or retry loop, and do not perform the API's document setup.
 | `must_contain` / `must_not_contain` | Case-insensitive substrings of raw final output |
 | `must_contain_amounts` | Numeric equivalence using `Decimal` |
 | `required_tools` / `forbidden_tools` | Exact tool names from current SDK `ToolCallItem` records |
+| `required_source_ids` | Exact IDs in the authoritative current-run source registry |
+| `required_citation_ids` | Exact cited IDs that also belong to the current-run registry |
 
 Amount matching recognizes optional `$`, commas, decimals, and case-insensitive
 `k`/`thousand`, `m`/`million`, and `b`/`billion` suffixes. For example, `$5M`,
@@ -464,7 +470,8 @@ check counts. Exit status is 0 only when all trials pass, otherwise 1.
 
 Each full run creates one UTC-timestamped JSON file under `evals/results/`, with
 microseconds in the filename. It contains run settings and summaries, plus every
-case's trials: raw output, observed tools, check results, pass/fail, and errors.
+case's trials: raw output, observed tools, source IDs, cited source IDs, check
+results, pass/fail, and errors.
 The directory is created automatically and is gitignored. Inspect individual
 failures, adjust the appropriate code or case expectations, and rerun to assess
 consistency. Assertions are deterministic; model answers and tool selection are not.

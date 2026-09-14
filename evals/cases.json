@@ -1,5 +1,33 @@
 [
   {
+    "id": "northstar_all_investors",
+    "prompt": "What are all the investors at Northstar?",
+    "must_contain": [
+      "Atlas Pension Fund",
+      "Beacon University Endowment",
+      "Redwood Family Office"
+    ],
+    "must_not_contain": [
+      "Northstar Growth Fund II",
+      "CC-019",
+      "CC-020",
+      "redwood_side_letter.md",
+      "beacon_side_letter.md",
+      "redwood_meeting_notes_2026_08_14.md",
+      "beacon_meeting_notes_2026_07_20.md"
+    ],
+    "required_tools": ["list_investors"],
+    "forbidden_tools": [
+      "find_investor", "get_positions", "get_capital_calls", "search_investor_documents"
+    ],
+    "required_source_ids": [
+      "db:investors:INV-001", "db:investors:INV-002", "db:investors:INV-003"
+    ],
+    "required_citation_ids": [
+      "db:investors:INV-001", "db:investors:INV-002", "db:investors:INV-003"
+    ]
+  },
+  {
     "id": "redwood_capital_call",
     "prompt": "Does Redwood have any outstanding capital calls?",
     "must_contain": [

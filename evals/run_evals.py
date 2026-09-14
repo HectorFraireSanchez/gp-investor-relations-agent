@@ -1,4 +1,4 @@
-"""Run deterministic checks against the agent's final output and tool calls."""
+"""Check final output, tool calls, and current-run source/citation IDs."""
 
 import asyncio
 import json
@@ -60,6 +60,8 @@ async def evaluate_case(case: dict) -> dict:
         "passed": False,
         "output": "",
         "tools_called": [],
+        "source_ids": [],
+        "cited_source_ids": [],
         "checks": [],
         "error": None,
     }
@@ -76,6 +78,12 @@ async def evaluate_case(case: dict) -> dict:
             for item in agent_result.new_items
             if isinstance(item, ToolCallItem) and item.tool_name is not None
         ]
+        result["source_ids"] = [
+            source["source_id"] for source in agent_result.sources
+            if isinstance(source, dict) and isinstance(source.get("source_id"), str)
+            and source["source_id"]
+        ]
+        result["cited_source_ids"] = list(agent_result.cited_source_ids)
     except Exception as exc:
         result["error"] = f"{type(exc).__name__}: {exc}"
         print(f"  FAIL agent run: {result['error']}")
@@ -84,19 +92,30 @@ async def evaluate_case(case: dict) -> dict:
         "unavailable" if result["error"] else ", ".join(result["tools_called"]) or "none"
     )
     print(f"  Tools called: {tools_display}")
+    if case.get("required_source_ids") or case.get("required_citation_ids"):
+        print(f"  Source IDs: {', '.join(result['source_ids']) or 'none'}")
+        print(f"  Cited source IDs: {', '.join(result['cited_source_ids']) or 'none'}")
     output = result["output"].casefold()
     for check_type in (
-        "must_contain", "must_not_contain", "required_tools", "forbidden_tools"
+        "must_contain", "must_not_contain", "required_tools", "forbidden_tools",
+        "required_source_ids", "required_citation_ids"
     ):
         for value in case.get(check_type, []):
             if check_type in ("required_tools", "forbidden_tools"):
                 # Tool identifiers are exact, case-sensitive names.
                 found = value in result["tools_called"]
+            elif check_type == "required_source_ids":
+                found = value in result["source_ids"]
+            elif check_type == "required_citation_ids":
+                # A cited ID must also belong to this run's authoritative registry.
+                found = value in result["cited_source_ids"] and value in result["source_ids"]
             else:
                 found = value.casefold() in output
             # A failed run cannot pass absence checks on unavailable results.
             passed = result["error"] is None and (
-                found if check_type in ("must_contain", "required_tools") else not found
+                found if check_type in (
+                    "must_contain", "required_tools", "required_source_ids", "required_citation_ids"
+                ) else not found
             )
             result["checks"].append(
                 {"type": check_type, "value": value, "passed": passed}

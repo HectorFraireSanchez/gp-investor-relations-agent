@@ -11,6 +11,18 @@ def get_connection():
     return connection
 
 
+def list_investors() -> list[dict]:
+    with closing(get_connection()) as connection:
+        rows = connection.execute(
+            """
+            SELECT investor_id, name, investor_type
+            FROM investors
+            ORDER BY name, investor_id
+            """
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def find_investor(name: str) -> dict | None:
     with closing(get_connection()) as connection:
         row = connection.execute(
