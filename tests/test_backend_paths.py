@@ -68,6 +68,31 @@ class ResourcePathTests(unittest.TestCase):
 
 
 class McpPackageTests(unittest.IsolatedAsyncioTestCase):
+    async def test_agent_allows_slow_mcp_initialization(self):
+        real_server = mcp_agent.MCPServerStdio
+
+        def delayed_server(**kwargs):
+            # Exceed MCP v2's ten-second discovery plus five-second initialize waits.
+            kwargs["params"] = {**kwargs["params"], "args": [
+                "-c",
+                "import time, runpy; time.sleep(20); "
+                "runpy.run_module('backend.mcp_server', run_name='__main__')",
+            ]}
+            return real_server(**kwargs)
+
+        async def inspect_server(agent, prompt):
+            result = await agent.mcp_servers[0].call_tool("find_investor", {"name": "Redwood"})
+            self.assertFalse(result.is_error)
+            payload = json.loads(result.content[0].text)
+            self.assertEqual(payload["data"]["investor_id"], "INV-001")
+            return SimpleNamespace(final_output="Delayed MCP ready", new_items=[])
+
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "offline-test", "OPENAI_VECTOR_STORE_ID": "offline-test"}), \
+                patch.object(mcp_agent, "MCPServerStdio", side_effect=delayed_server), \
+                patch.object(mcp_agent.Runner, "run", side_effect=inspect_server):
+            response = await mcp_agent.run_agent("Inspect tools without calling the model")
+        self.assertEqual(response.final_output, "Delayed MCP ready")
+
     async def test_agent_launches_real_mcp_package_from_another_directory(self):
         async def inspect_server(agent, prompt):
             server = agent.mcp_servers[0]

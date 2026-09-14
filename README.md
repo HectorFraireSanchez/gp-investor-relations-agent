@@ -85,6 +85,10 @@ server's tools over standard input/output; the MCP connection closes after the
 run. Structured results and retrieved document excerpts return to the agent for
 synthesis.
 
+MCP session requests use a 60-second read timeout, including the initialization
+handshake, to accommodate slow subprocess startup on small hosted instances.
+This also applies to tool responses; it is not a timeout for the entire briefing.
+
 Structured operational data flows from SQLite through `backend/domain.py` functions to
 MCP tools. Unstructured investor documents remain in `documents/` and are uploaded
 to an OpenAI vector store for semantic retrieval through an MCP tool. The agent

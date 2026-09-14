@@ -145,6 +145,8 @@ async def run_agent(prompt: str, *, session: Session | None = None) -> AgentResp
                 "OPENAI_VECTOR_STORE_ID": os.environ["OPENAI_VECTOR_STORE_ID"],
             },
         },
+        # Cold subprocess startup can exceed the SDK's five-second read timeout.
+        client_session_timeout_seconds=60,
         cache_tools_list=True,
         custom_data_extractor=_capture_mcp_sources,
     ) as server:
