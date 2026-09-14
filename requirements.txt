@@ -1,6 +1,6 @@
-openai-agents
-openai
-mcp[cli]
-python-dotenv
-fastapi
-uvicorn>=0.36.0
+openai-agents==0.22.2
+openai==3.12.0
+mcp[cli]==2.2.0
+python-dotenv==1.2.3
+fastapi==0.141.1
+uvicorn==0.52.4
