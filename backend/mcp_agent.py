@@ -8,10 +8,12 @@ from dataclasses import dataclass, field
 
 from agents import Agent, RunConfig, Runner, Session
 from agents.items import RunItem, ToolCallOutputItem, TResponseInputItem
-from agents.mcp import MCPServerStdio, MCPToolCustomDataContext
+from agents.mcp import MCPToolCustomDataContext
 from dotenv import load_dotenv
 
 from backend.paths import ENV_PATH, ROOT_DIR
+from backend.sdk_timing import ModelTimingHooks, TimedMCPServerStdio as MCPServerStdio
+from backend.timing import measure, timed
 
 load_dotenv(ENV_PATH)
 CITATION_PATTERN = re.compile(r"\[\[cite:([^\[\]]*)\]\]")
@@ -133,6 +135,7 @@ def _session_input_callback(
     return prepared
 
 
+@timed("agent.total")
 async def run_agent(prompt: str, *, session: Session | None = None) -> AgentResponse:
     async with MCPServerStdio(
         name="Northstar Investor Operations",
@@ -188,15 +191,18 @@ async def run_agent(prompt: str, *, session: Session | None = None) -> AgentResp
             mcp_servers=[server],
         )
 
-        if session is None:
-            result = await Runner.run(agent, prompt)
-        else:
-            result = await Runner.run(
-                agent, prompt, session=session,
-                run_config=RunConfig(session_input_callback=_session_input_callback),
-            )
-        sources = collect_sources(result.new_items)
-        cited_source_ids, invalid_source_ids = validate_citations(result.final_output, sources)
+        hooks = ModelTimingHooks()
+        with measure("agent.runner"), hooks.track_run():
+            if session is None:
+                result = await Runner.run(agent, prompt, hooks=hooks)
+            else:
+                result = await Runner.run(
+                    agent, prompt, session=session, hooks=hooks,
+                    run_config=RunConfig(session_input_callback=_session_input_callback),
+                )
+        with measure("citations.validate"):
+            sources = collect_sources(result.new_items)
+            cited_source_ids, invalid_source_ids = validate_citations(result.final_output, sources)
 
         return AgentResponse(
             final_output=result.final_output,

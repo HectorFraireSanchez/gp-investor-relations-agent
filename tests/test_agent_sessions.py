@@ -108,7 +108,7 @@ class SessionSdkTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(result.invalid_source_ids, [])
                     self.assertEqual(run.await_args.args[1], "Question")
                     if supplied is None:
-                        self.assertEqual(run.await_args.kwargs, {})
+                        self.assertEqual(set(run.await_args.kwargs), {"hooks"})
                     else:
                         self.assertIs(run.await_args.kwargs["session"], session)
                         self.assertIs(run.await_args.kwargs["run_config"].session_input_callback,

@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from backend.paths import ENV_PATH
 from backend.service import BriefingResult, generate_briefing
 from backend.setup_documents import ensure_vector_store
+from backend.timing import measure, timed, timing_scope
 
 logger = logging.getLogger(__name__)
 load_dotenv(ENV_PATH)
@@ -37,7 +38,8 @@ def create_event_loop() -> asyncio.AbstractEventLoop:
 async def lifespan(app: FastAPI):
     load_dotenv(ENV_PATH)
     # Finish the existing synchronous setup before accepting requests.
-    await asyncio.to_thread(ensure_vector_store)
+    with timing_scope(), measure("startup.documents"):
+        await asyncio.to_thread(ensure_vector_store)
     yield
 
 
@@ -76,6 +78,7 @@ class BriefingRequest(BaseModel):
 
 
 @app.post("/api/briefings")
+@timed("api.total")
 async def create_briefing(request: BriefingRequest) -> BriefingResult:
     try:
         return await generate_briefing(request.prompt, conversation_id=request.conversation_id)

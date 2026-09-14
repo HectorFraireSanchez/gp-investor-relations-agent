@@ -80,7 +80,7 @@ class McpPackageTests(unittest.IsolatedAsyncioTestCase):
             ]}
             return real_server(**kwargs)
 
-        async def inspect_server(agent, prompt):
+        async def inspect_server(agent, prompt, **kwargs):
             result = await agent.mcp_servers[0].call_tool("find_investor", {"name": "Redwood"})
             self.assertFalse(result.is_error)
             payload = json.loads(result.content[0].text)
@@ -94,7 +94,7 @@ class McpPackageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.final_output, "Delayed MCP ready")
 
     async def test_agent_launches_real_mcp_package_from_another_directory(self):
-        async def inspect_server(agent, prompt):
+        async def inspect_server(agent, prompt, **kwargs):
             server = agent.mcp_servers[0]
             names = {tool.name for tool in await server.list_tools()}
             self.assertEqual(names, {"find_investor", "list_investors", "get_positions", "get_capital_calls", "search_investor_documents"})

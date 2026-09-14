@@ -86,6 +86,21 @@ class ApiTests(unittest.TestCase):
         self.generate.return_value = BriefingResult("new-id", "Next request works", [], [])
         self.assertEqual(self.client.post("/api/briefings", json={"prompt": "Again"}).status_code, 200)
 
+    def test_failed_request_has_timing_without_prompt_or_exception_text(self):
+        import json
+
+        self.generate.side_effect = RuntimeError("private upstream details")
+        with self.assertLogs("backend.timing", level="INFO") as timing_logs, \
+                self.assertLogs("backend.api", level="ERROR"):
+            response = self.client.post("/api/briefings", json={"prompt": "private prompt"})
+        self.assertEqual(response.status_code, 502)
+        events = [json.loads(record.getMessage()) for record in timing_logs.records]
+        self.assertEqual([event["phase"] for event in events], ["start", "end"])
+        self.assertEqual(events[-1]["stage"], "api.total")
+        self.assertEqual(events[-1]["status"], "error")
+        self.assertEqual(events[0]["request_id"], events[-1]["request_id"])
+        self.assertNotIn("private", str(events))
+
     def test_local_cors_is_restricted(self):
         for origin, allowed in (("http://localhost:5173", True),
                                 ("http://127.0.0.1:5173", True),

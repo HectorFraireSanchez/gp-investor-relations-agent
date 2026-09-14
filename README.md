@@ -413,6 +413,49 @@ stale host ID creates another store. Configure a valid existing ID on the host
 to reuse it. These commands configure no volumes or host-code mounts; code and
 bundled data changes require rebuilding the image.
 
+## Measuring Briefing Latency
+
+The backend emits JSON timing records to stderr, visible in Render's **Logs**.
+After deploying, run a briefing and filter logs for `"event": "timing"`.
+Each request has a generated `request_id`; filter by that ID to see its stages.
+`operation_id` pairs each stage's `start` and `end` records, including repeated
+tool or model calls. End records include `duration_ms` and `status` (`ok`,
+`error`, or `cancelled`). `offset_ms` locates the event relative to the request.
+A start with no end can help identify where a process was interrupted.
+
+| Stage | What it measures |
+| --- | --- |
+| `startup.documents` | Startup vector-store validation or creation/indexing; separate from requests |
+| `api.total` | Validated FastAPI handler execution, including error handling |
+| `briefing.total` | Service execution, including session wrapper and citation rendering |
+| `conversation.wrapper` | Local session/client construction; not remote history loading |
+| `agent.total` | MCP connection, agent workflow, source validation, and MCP cleanup |
+| `mcp.connect` | Subprocess startup and MCP protocol negotiation |
+| `mcp.list_tools` | Each tool-list request, including cache hits |
+| `conversation.load` | Hosted history read, including lazy conversation creation on a new turn |
+| `model.request` | Each SDK model invocation, including transport/retries; `call` numbers the invocations |
+| `mcp.tool` | Each named tool's round trip, including SQLite work or vector-store search |
+| `conversation.save` | Hosted history write |
+| `agent.runner` | Entire SDK run, including history, model invocations, and tools |
+| `citations.validate` | Source collection and citation-marker validation |
+| `citations.render` | Formatting the answer and citation metadata |
+| `mcp.cleanup` | MCP connection and subprocess shutdown |
+
+Times are inclusive: **do not sum parent and child stages**. Tool calls can run
+concurrently, so their summed durations can exceed elapsed wall time. Compare
+`mcp.connect`, individual `model.request` and `mcp.tool` entries, and history
+operations to locate the delay. Timings retain exception class names but do not
+record prompts, answers, tool arguments/results, API keys, or conversation IDs.
+
+These logs measure work in the backend process. They exclude Render's wake-up
+time before FastAPI receives the request, Python imports before the lifespan,
+HTTP response serialization, browser networking, and React rendering. To compare
+the user's wait with backend work, open browser developer tools → **Network**,
+submit a briefing, and compare the `/api/briefings` request duration with
+`api.total`. The difference includes network/platform overhead and cannot be
+attributed entirely to a cold start. Compare a first request after inactivity
+with an immediate follow-up. No extra model calls are made to collect timings.
+
 ## Tests and Agent Evaluations
 
 Run the offline Python tests from the repository root with `.venv` active:
@@ -500,7 +543,9 @@ react-markdown, FastAPI, Uvicorn, Python, OpenAI Agents SDK, Model Context Proto
   or citation correctness.
 - Evaluations check raw output, numeric amounts, and tool names across repeated
   trials. They do not assert tool arguments or order, or establish whether a cited
-  source supports a claim. There is no LLM grader or latency/token/cost tracking.
+  source supports a claim. There is no LLM grader or token/cost tracking.
+  Backend logs provide stage-level latency timings; evaluation reports do not
+  aggregate these timings.
 - Python dependencies are unpinned. The session callback uses SDK behavior verified
   against version 0.22.2; run the SDK regression tests when changing dependencies.
   Frontend dependency versions are recorded in `frontend/package-lock.json`.

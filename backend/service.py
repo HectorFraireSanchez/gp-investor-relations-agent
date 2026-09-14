@@ -2,10 +2,10 @@
 
 from dataclasses import dataclass
 
-from agents import OpenAIConversationsSession
-
 from backend.citations import render_citations
 from backend.mcp_agent import run_agent
+from backend.sdk_timing import TimedConversationsSession as OpenAIConversationsSession
+from backend.timing import measure, timed
 
 
 @dataclass
@@ -16,18 +16,21 @@ class BriefingResult:
     invalid_source_ids: list[str]
 
 
+@timed("briefing.total")
 async def generate_briefing(
     prompt: str, *, conversation_id: str | None = None
 ) -> BriefingResult:
     if not prompt.strip():
         raise ValueError("Please enter a prompt before generating a briefing.")
     # Each request gets a wrapper; OpenAI stores the persistent conversation.
-    session = (
-        OpenAIConversationsSession() if conversation_id is None
-        else OpenAIConversationsSession(conversation_id=conversation_id)
-    )
+    with measure("conversation.wrapper"):
+        session = (
+            OpenAIConversationsSession() if conversation_id is None
+            else OpenAIConversationsSession(conversation_id=conversation_id)
+        )
     agent_response = await run_agent(prompt, session=session)
-    rendered = render_citations(agent_response)
+    with measure("citations.render"):
+        rendered = render_citations(agent_response)
     return BriefingResult(
         conversation_id=session.session_id,
         answer=rendered.answer,
