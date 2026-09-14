@@ -59,6 +59,14 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         agent.assert_not_awaited()
         self.factory.assert_not_called()
 
+    async def test_passes_worker_mcp_connection_with_a_fresh_session_per_request(self):
+        server = object()
+        with patch.object(service, "run_agent", AsyncMock(return_value=AgentResponse("Answer", [], []))) as agent:
+            for _ in range(2):
+                await service.generate_briefing("Follow up", conversation_id="existing-id", mcp_server=server)
+                agent.assert_awaited_with("Follow up", session=self.sessions[-1], mcp_server=server)
+        self.assertIsNot(self.sessions[0], self.sessions[1])
+
     async def test_agent_error_propagates_to_caller(self):
         with patch.object(service, 'run_agent', AsyncMock(side_effect=RuntimeError('failure'))):
             with self.assertRaisesRegex(RuntimeError, 'failure'):

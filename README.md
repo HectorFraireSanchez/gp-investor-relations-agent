@@ -62,6 +62,7 @@ flowchart TD
     SERVICE -->|Prompt + supplied session| A["backend/mcp_agent.py<br/>run_agent / Runner.run"]
     A <-->|SDK session persistence| HISTORY["OpenAI Conversations API<br/>Hosted conversation history"]
     A <-->|MCP over stdio| M["backend/mcp_server.py<br/>Structured and document tools"]
+    API -.->|Owns one subprocess per worker| M
     M <--> D["backend/domain.py<br/>SQLite queries"]
     D <--> DB[("backend/data/northstar.db<br/>Investors, positions, capital calls")]
     M <--> S["search_investor_documents<br/>Semantic retrieval"]
@@ -78,12 +79,15 @@ flowchart TD
     API --> WEB
 ```
 
-For each request, `backend/mcp_agent.py` starts `backend/mcp_server.py` as a subprocess using the
-same Python interpreter via `python -m backend.mcp_server`, with its working
-directory explicitly set to the repository root. The OpenAI Agents SDK discovers and invokes the
-server's tools over standard input/output; the MCP connection closes after the
-run. Structured results and retrieved document excerpts return to the agent for
-synthesis.
+FastAPI's lifespan starts one `backend/mcp_server.py` subprocess per backend worker
+using the same Python interpreter via `python -m backend.mcp_server`, with its
+working directory explicitly set to the repository root. It connects and discovers
+tools before accepting requests, reuses that connection across briefings, and
+closes it on worker shutdown. The lifespan task owns both startup and cleanup.
+Each request still creates its own agent, model timing hooks, conversation wrapper,
+and source registry. Only the MCP connection and tool definitions are shared;
+tool results are retrieved for each run. Structured results and document excerpts
+return to that request's agent for synthesis.
 
 MCP session requests use a 60-second read timeout, including the initialization
 handshake, to accommodate slow subprocess startup on small hosted instances.
@@ -104,12 +108,14 @@ The two reusable Python boundaries are:
 
 ```python
 async def generate_briefing(
-    prompt: str, *, conversation_id: str | None = None
+    prompt: str, *, conversation_id: str | None = None,
+    mcp_server: TimedMCPServerStdio | None = None,
 ) -> BriefingResult:
     ...
 
 async def run_agent(
-    prompt: str, *, session: Session | None = None
+    prompt: str, *, session: Session | None = None,
+    mcp_server: MCPServerStdio | None = None,
 ) -> AgentResponse:
     ...
 ```
@@ -118,6 +124,9 @@ The service creates a new `OpenAIConversationsSession` wrapper for each request,
 passing the existing ID when supplied. The SDK manages history loading and saving.
 The agent runner accepts a generic session and never creates one automatically.
 Calling `run_agent(prompt)` without a session remains an independent one-shot run.
+Both functions accept an already-connected `mcp_server`; callers retain ownership
+of it. Without a supplied server, standalone calls and evaluations continue to
+open and close their own MCP connection per run.
 
 ## Design Decisions
 
@@ -325,8 +334,8 @@ when deploying and restart the backend. No wildcard or production origin is
 enabled by default. Only GET/POST and the Content-Type request header are allowed.
 
 `GET http://localhost:8000/health` returns `{"status":"ok"}` without calling the
-agent or OpenAI. Normal application startup still initializes the document store
-before accepting requests; this endpoint reports service liveness, not upstream
+agent or OpenAI. Normal application startup initializes the document store and
+connects MCP before accepting requests; this endpoint reports service liveness, not upstream
 API health.
 
 `POST /api/briefings` accepts `{"prompt": "Prepare me for Redwood."}` to start an
@@ -358,7 +367,11 @@ files in `documents/`, waits for indexing, and saves `OPENAI_VECTOR_STORE_ID` in
 are indexed. No manual document-setup command, ID copying, or PowerShell
 environment-variable exports are needed.
 
-The MCP server starts automatically; no separate server command is needed.
+The MCP server starts automatically once per worker; no separate command is
+needed. A connection or initial tool-discovery failure prevents startup. A failed
+or cancelled briefing does not close the shared connection. If the MCP subprocess
+itself exits after startup, restart the backend to recreate it; automatic
+subprocess recovery is not implemented.
 
 For later runs, activate `.venv` and start the backend and frontend as above.
 Backend configuration is loaded from `.env`. That file is intentionally git-ignored, and `.env.example` contains
@@ -429,8 +442,8 @@ A start with no end can help identify where a process was interrupted.
 | `api.total` | Validated FastAPI handler execution, including error handling |
 | `briefing.total` | Service execution, including session wrapper and citation rendering |
 | `conversation.wrapper` | Local session/client construction; not remote history loading |
-| `agent.total` | MCP connection, agent workflow, source validation, and MCP cleanup |
-| `mcp.connect` | Subprocess startup and MCP protocol negotiation |
+| `agent.total` | Agent workflow and source validation; standalone runs also include MCP connection/cleanup |
+| `mcp.connect` | Subprocess startup and MCP protocol negotiation, once at web worker startup |
 | `mcp.list_tools` | Each tool-list request, including cache hits |
 | `conversation.load` | Hosted history read, including lazy conversation creation on a new turn |
 | `model.request` | Each SDK model invocation, including transport/retries; `call` numbers the invocations |
@@ -439,13 +452,16 @@ A start with no end can help identify where a process was interrupted.
 | `agent.runner` | Entire SDK run, including history, model invocations, and tools |
 | `citations.validate` | Source collection and citation-marker validation |
 | `citations.render` | Formatting the answer and citation metadata |
-| `mcp.cleanup` | MCP connection and subprocess shutdown |
+| `mcp.cleanup` | MCP connection and subprocess shutdown, once at web worker shutdown |
 
 Times are inclusive: **do not sum parent and child stages**. Tool calls can run
 concurrently, so their summed durations can exceed elapsed wall time. Compare
 `mcp.connect`, individual `model.request` and `mcp.tool` entries, and history
 operations to locate the delay. Timings retain exception class names but do not
 record prompts, answers, tool arguments/results, API keys, or conversation IDs.
+For web requests, `mcp.connect` and `mcp.cleanup` should no longer appear within
+each request's timing group. They remain logged separately at worker startup and
+shutdown. Render waking or restarting a worker still requires MCP startup once.
 
 These logs measure work in the backend process. They exclude Render's wake-up
 time before FastAPI receives the request, Python imports before the lifespan,

@@ -3,6 +3,7 @@ import os
 import re
 import sys
 from collections.abc import Mapping
+from contextlib import nullcontext
 from copy import deepcopy
 from dataclasses import dataclass, field
 
@@ -135,9 +136,9 @@ def _session_input_callback(
     return prepared
 
 
-@timed("agent.total")
-async def run_agent(prompt: str, *, session: Session | None = None) -> AgentResponse:
-    async with MCPServerStdio(
+def create_mcp_server() -> MCPServerStdio:
+    """Construct a connection; its owner controls startup and shutdown."""
+    return MCPServerStdio(
         name="Northstar Investor Operations",
         params={
             "command": sys.executable,
@@ -152,7 +153,17 @@ async def run_agent(prompt: str, *, session: Session | None = None) -> AgentResp
         client_session_timeout_seconds=60,
         cache_tools_list=True,
         custom_data_extractor=_capture_mcp_sources,
-    ) as server:
+    )
+
+
+@timed("agent.total")
+async def run_agent(
+    prompt: str, *, session: Session | None = None,
+    mcp_server: MCPServerStdio | None = None,
+) -> AgentResponse:
+    # Web requests borrow the worker's connection. Standalone calls own theirs.
+    connection = nullcontext(mcp_server) if mcp_server is not None else create_mcp_server()
+    async with connection as server:
 
         agent = Agent(
             name="Investor Relations Assistant",

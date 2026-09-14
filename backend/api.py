@@ -7,11 +7,12 @@ import sys
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from backend.paths import ENV_PATH
+from backend.mcp_agent import create_mcp_server
 from backend.service import BriefingResult, generate_briefing
 from backend.setup_documents import ensure_vector_store
 from backend.timing import measure, timed, timing_scope
@@ -40,7 +41,14 @@ async def lifespan(app: FastAPI):
     # Finish the existing synchronous setup before accepting requests.
     with timing_scope(), measure("startup.documents"):
         await asyncio.to_thread(ensure_vector_store)
-    yield
+    # Enter and exit in the lifespan task: MCP's task groups belong to this task.
+    async with create_mcp_server() as server:
+        await server.list_tools()
+        app.state.mcp_server = server
+        try:
+            yield
+        finally:
+            del app.state.mcp_server
 
 
 app = FastAPI(title="Northstar Investor Intelligence", lifespan=lifespan)
@@ -79,9 +87,12 @@ class BriefingRequest(BaseModel):
 
 @app.post("/api/briefings")
 @timed("api.total")
-async def create_briefing(request: BriefingRequest) -> BriefingResult:
+async def create_briefing(request: BriefingRequest, http_request: Request) -> BriefingResult:
     try:
-        return await generate_briefing(request.prompt, conversation_id=request.conversation_id)
+        return await generate_briefing(
+            request.prompt, conversation_id=request.conversation_id,
+            mcp_server=http_request.app.state.mcp_server,
+        )
     except Exception as exc:
         logger.exception("Briefing generation failed")
         raise HTTPException(

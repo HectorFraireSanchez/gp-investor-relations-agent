@@ -14,6 +14,8 @@ from backend.service import BriefingResult
 class ApiTests(unittest.TestCase):
     def setUp(self):
         self.setup = self.enterContext(patch.object(api, "ensure_vector_store"))
+        self.mcp_factory = self.enterContext(patch.object(api, "create_mcp_server"))
+        self.mcp = self.mcp_factory.return_value.__aenter__.return_value
         self.generate = self.enterContext(patch.object(api, "generate_briefing", AsyncMock()))
         self.client = self.enterContext(TestClient(api.app))
 
@@ -45,7 +47,7 @@ class ApiTests(unittest.TestCase):
                 })
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual(response.json(), asdict(result))
-                self.generate.assert_awaited_with("Follow up", conversation_id=value)
+                self.generate.assert_awaited_with("Follow up", conversation_id=value, mcp_server=self.mcp)
 
     def test_cors_origins_can_be_configured_without_a_wildcard(self):
         with patch.dict(os.environ, {"CORS_ALLOW_ORIGINS": " http://localhost:5173, https://frontend.example.test, "}):
@@ -73,7 +75,7 @@ class ApiTests(unittest.TestCase):
             response = self.client.post("/api/briefings", json={"prompt": " Prepare Redwood "})
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json(), asdict(result))
-        self.generate.assert_awaited_with(" Prepare Redwood ", conversation_id=None)
+        self.generate.assert_awaited_with(" Prepare Redwood ", conversation_id=None, mcp_server=self.mcp)
         self.setup.assert_called_once()
 
     def test_errors_do_not_disclose_internal_details(self):
