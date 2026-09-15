@@ -87,6 +87,9 @@ def search_investor_documents(
     meeting notes, reporting requirements, and fund-report context.
     Each result contains retrieved data and document source provenance.
     """
+    investor_name = investor_name.strip()
+    if not investor_name:
+        raise ValueError("Investor name must not be blank")
 
     search_query = f"{investor_name}: {query}"
 

@@ -1,4 +1,4 @@
-"""HTTP transport for the existing briefing service."""
+"""HTTP transport and worker lifecycle for investor briefings."""
 
 import asyncio
 import logging
@@ -38,7 +38,7 @@ def create_event_loop() -> asyncio.AbstractEventLoop:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     load_dotenv(ENV_PATH)
-    # Finish the existing synchronous setup before accepting requests.
+    # Provision documents off the event loop before accepting requests.
     with timing_scope(), measure("startup.documents"):
         await asyncio.to_thread(ensure_vector_store)
     # Enter and exit in the lifespan task: MCP's task groups belong to this task.

@@ -1,4 +1,4 @@
-"""Regression checks for package relocation, without external API requests."""
+"""Package entry points and resource paths, without external API requests."""
 
 import contextlib
 import io

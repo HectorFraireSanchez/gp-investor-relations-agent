@@ -1,4 +1,4 @@
-"""Deterministic investor enumeration and existing single-record lookup."""
+"""Deterministic investor enumeration and literal name lookup."""
 
 import sqlite3
 import tempfile
@@ -43,4 +43,19 @@ class InvestorTests(unittest.TestCase):
             "investor_id": "INV-002", "name": "Beacon University Endowment", "investor_type": "Endowment",
         })
         self.assertIsNone(domain.find_investor("No such investor"))
-        self.assertIsInstance(domain.find_investor(""), dict)
+
+    def test_blank_names_do_not_select_an_arbitrary_investor(self):
+        for name in ("", " \n "):
+            with self.subTest(name=name):
+                self.assertIsNone(domain.find_investor(name))
+
+    def test_name_search_is_literal_case_insensitive_and_trims_whitespace(self):
+        self.assertEqual(domain.find_investor("  rEdWoOd  ")["investor_id"], "INV-001")
+        for name in ("%", "_", "Red%", "Redwood' OR 1=1 --"):
+            with self.subTest(name=name):
+                self.assertIsNone(domain.find_investor(name))
+        with closing(sqlite3.connect(self.database)) as connection:
+            connection.execute("INSERT INTO investors VALUES (?, ?, ?)",
+                               ("INV-004", "100% Fund_Name", "Test"))
+            connection.commit()
+        self.assertEqual(domain.find_investor("% Fund_")["investor_id"], "INV-004")

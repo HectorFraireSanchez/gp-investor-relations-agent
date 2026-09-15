@@ -24,15 +24,19 @@ def list_investors() -> list[dict]:
 
 
 def find_investor(name: str) -> dict | None:
+    name = name.strip()
+    if not name:
+        return None
+
     with closing(get_connection()) as connection:
         row = connection.execute(
             """
             SELECT investor_id, name, investor_type
             FROM investors
-            WHERE lower(name) LIKE ?
+            WHERE instr(lower(name), ?) > 0
             LIMIT 1
             """,
-            (f"%{name.lower()}%",),
+            (name.lower(),),
         ).fetchone()
 
     return dict(row) if row else None

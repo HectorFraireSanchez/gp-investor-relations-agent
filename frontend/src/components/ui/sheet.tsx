@@ -1,4 +1,4 @@
-// Small shadcn-style Sheet built on Radix Dialog for focus, Escape, and dismissal.
+// Radix Dialog handles focus, Escape, and dismissal for the source drawer.
 import * as Dialog from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
 import type { ComponentProps } from 'react'

@@ -1,592 +1,129 @@
-# GP Investor Relations Agent
+# Northstar Investor Intelligence
 
-An AI-assisted application for investor meeting preparation at Northstar Capital,
-a fictional private-markets general partner (GP). An investor-relations user can
-ask for a briefing that brings together fund positions, capital calls, reporting
-obligations and recent meeting context. The local prototype combines deterministic
-SQLite-backed data tools and semantic document retrieval through MCP, with source
-attribution for both database records and document-backed claims.
+**Live demo: [Try Northstar](https://northstar-h9q9.onrender.com/)**
 
-## What It Does
+Northstar helps investor-relations professionals at a private-market fund manager prepare for investor conversations. Built around fictional Northstar Capital, it brings together financial records, reporting obligations, and past meeting notes into a briefing with citations. All investors, documents, and financial data are synthetic.
 
-The workflow addresses a concrete investor-relations task: gathering financial
-records, side-letter obligations and prior discussion points before an investor
-meeting. Its scope is read-only briefing preparation for an IR professional to
-review.
+![The deployed Northstar application showing a Redwood meeting briefing with financial facts, reporting obligations, meeting context, and numbered sources](docs/images/northstar-demo.png)
 
-Use the Northstar web application to prepare a briefing, then open its numbered
-citations to inspect the underlying source metadata. A React/TypeScript/Vite page
-calls a small FastAPI transport layer; the existing Python service supplies the
-answer and full source metadata. Ask follow-up questions in the same workspace;
-earlier requests, answers, and their sources remain visible. Use **New conversation**
-to start another briefing.
+## What it does
 
-The composer stays pinned to the bottom while the conversation history scrolls
-above it. **Enter** sends a request; **Shift+Enter** inserts a line break.
-Ctrl/Cmd+Enter also sends. The text box grows to a capped height. New turns follow
-the bottom, while scrolling up during a pending reply preserves your reading position.
+- **Prepare for a meeting:** combine an investor's fund position, capital calls, side-letter obligations, and recent discussions.
+- **Ask follow-up questions:** retain conversational context while retrieving fresh evidence for each answer.
+- **Inspect sources:** open numbered citations to see the database record or document metadata returned by the tools.
 
-Earlier turns remain visible during loading and errors. Failed prompts stay
-available to edit or retry, without duplicating successful turns. The UI prevents
-concurrent submissions and rejects unexpected conversation-ID changes instead of
-mixing conversations.
+Try **"Prepare me for my meeting with Redwood Family Office"**, then **"What special reporting requirements do they have?"** The workflow is read-only; it does not change records, send messages, or execute transactions.
 
-**New conversation** clears local messages, the conversation ID, the prompt, and
-source selection. Refreshing also resets the workspace. Neither action deletes
-the hosted conversation; the app cannot reopen an earlier conversation yet.
+## How it works
 
-Example questions supported by the included data:
-
-- What are all the investors at Northstar?
-- Prepare me for a meeting with Redwood Family Office. Include its investment
-  position, outstanding capital calls, special reporting obligations, and most
-  recent meeting discussion.
-- What outstanding capital calls does Redwood Family Office have?
-- What special reporting obligations apply to Beacon University Endowment?
-- What did Redwood Family Office discuss in its most recent meeting?
-
-After a Redwood briefing, follow-ups can simply ask "What did they discuss last
-time?" or "What special reporting requirements do they have?" React retains the
-conversation ID automatically; users do not need to manage it.
-
-The React/FastAPI application is the supported product interface. Evaluation,
-setup, and database-reset commands remain developer tools; there is no separate
-terminal briefing interface.
-
-## Architecture
+A React interface sends each prompt to FastAPI. The OpenAI Agents SDK runs the model and exposes business-data and document-search capabilities through **Model Context Protocol (MCP)** tools. Financial records come from SQLite queries; document passages come from semantic search over an OpenAI vector store.
 
 ```mermaid
 flowchart TD
-    WEB["React + TypeScript + Vite<br/>Visible history + pinned composer"] -->|New prompt + optional conversation ID| API["backend/api.py<br/>FastAPI"]
-    API --> SERVICE["backend/service.py<br/>Create or resume a session per request"]
-    SERVICE -->|Prompt + supplied session| A["backend/mcp_agent.py<br/>run_agent / Runner.run"]
-    A <-->|SDK session persistence| HISTORY["OpenAI Conversations API<br/>Hosted conversation history"]
-    A <-->|MCP over stdio| M["backend/mcp_server.py<br/>Structured and document tools"]
-    API -.->|Owns one subprocess per worker| M
-    M <--> D["backend/domain.py<br/>SQLite queries"]
-    D <--> DB[("backend/data/northstar.db<br/>Investors, positions, capital calls")]
-    M <--> S["search_investor_documents<br/>Semantic retrieval"]
-    S <--> V["OpenAI vector store"]
-    API -.->|At startup| SETUP["backend/setup_documents.py<br/>ensure_vector_store()"]
-    F["documents/<br/>Side letters and meeting notes"] -.->|Upload when creating a store| SETUP
-    SETUP -.->|Create or reuse| V
-    SETUP -.->|Persist new store ID| ENV[".env"]
-    A --> RAW["AgentResponse<br/>Answer, provenance, validation, SDK items"]
-    RAW --> R["backend/citations.py<br/>Deterministic citation rendering"]
-    R --> SERVICE
-    SERVICE --> RESULT["BriefingResult<br/>Conversation ID, answer, citations, invalid source IDs"]
-    RESULT --> API
-    API --> WEB
+    UI["React / TypeScript"] <-->|Prompt, answer, citations| API["FastAPI"]
+    API <--> AGENT["OpenAI Agents SDK"]
+    AGENT <-->|Conversation context| HISTORY["OpenAI Conversations API"]
+    AGENT <-->|Tool calls over stdio| MCP["MCP tools"]
+    MCP --> DB[("SQLite financial records")]
+    MCP --> SEARCH["OpenAI vector-store search"]
+    DOCS["Synthetic side letters and meeting notes"] -.->|Initial upload| SEARCH
 ```
 
-FastAPI's lifespan starts one `backend/mcp_server.py` subprocess per backend worker
-using the same Python interpreter via `python -m backend.mcp_server`, with its
-working directory explicitly set to the repository root. It connects and discovers
-tools before accepting requests, reuses that connection across briefings, and
-closes it on worker shutdown. The lifespan task owns both startup and cleanup.
-Each request still creates its own agent, model timing hooks, conversation wrapper,
-and source registry. Only the MCP connection and tool definitions are shared;
-tool results are retrieved for each run. Structured results and document excerpts
-return to that request's agent for synthesis.
+The main design decisions are:
 
-MCP session requests use a 60-second read timeout, including the initialization
-handshake, to accommodate slow subprocess startup on small hosted instances.
-This also applies to tool responses; it is not a timeout for the entire briefing.
+- **Separate business logic from model orchestration.** Parameterized queries in [backend/domain.py](backend/domain.py) retrieve structured facts. The agent chooses tools and synthesizes their results; it does not generate SQL.
+- **Validate citation provenance per answer.** Tools return data together with source metadata. The backend collects sources from the current run, validates citation IDs against that registry, and renders numbered references. Unknown IDs become `[citation unavailable]`. This verifies source identity, not whether a source supports every claim.
+- **Retain context without reusing old evidence.** Hosted conversations preserve dialogue. Before a follow-up, the backend removes old tool outputs and assistant citation markers from replayed context, and instructs the agent to retrieve facts again. Each answer has its own source registry.
+- **Reuse the MCP connection.** FastAPI starts one MCP subprocess per worker, discovers its tools, and closes it at shutdown. Agents, sessions, and source registries remain separate for each request.
 
-Structured operational data flows from SQLite through `backend/domain.py` functions to
-MCP tools. Unstructured investor documents remain in `documents/` and are uploaded
-to an OpenAI vector store for semantic retrieval through an MCP tool. The agent
-chooses tools and combines their results; the HTTP API calls the
-shared service to run the workflow and render its citations.
+**Stack:** Python, FastAPI, OpenAI Agents SDK, MCP, SQLite, OpenAI vector stores and Conversations API; React, TypeScript, Vite, Tailwind CSS, and Radix Dialog. Render hosts the static frontend and Docker-based backend separately.
 
-For a meeting-preparation request, the agent can resolve the investor, retrieve
-positions and capital calls, search for relevant side-letter and meeting-note
-context, then assemble a briefing. The model selects the tools and their
-arguments; the tool implementations determine how the requested data is retrieved.
+## Testing and evaluation
 
-The two reusable Python boundaries are:
+Offline tests cover API validation and errors, conversation persistence, citation rendering, document scoping, and a real MCP subprocess. They also exercise concurrent requests, cancellation, and connection reuse. Frontend tests cover follow-ups, per-answer citations, source-drawer focus, retries, resets, and keyboard interaction.
 
-```python
-async def generate_briefing(
-    prompt: str, *, conversation_id: str | None = None,
-    mcp_server: TimedMCPServerStdio | None = None,
-) -> BriefingResult:
-    ...
+The [evaluation harness](evals/run_evals.py) runs **9 cases with 5 independent trials each**, using real model calls. [Cases](evals/cases.json) cover investor enumeration, positions, outstanding and paid calls, reporting obligations, meeting history, missing records, and full meeting preparation. Assertions check:
 
-async def run_agent(
-    prompt: str, *, session: Session | None = None,
-    mcp_server: MCPServerStdio | None = None,
-) -> AgentResponse:
-    ...
-```
+- Required and forbidden answer content.
+- Financial amounts normalized with `Decimal`, including forms such as `$5M` and `5,000,000`.
+- Required and forbidden tools, taken from actual SDK call records.
+- Required source IDs and citations belonging to the current run, where configured.
 
-The service creates a new `OpenAIConversationsSession` wrapper for each request,
-passing the existing ID when supplied. The SDK manages history loading and saving.
-The agent runner accepts a generic session and never creates one automatically.
-Calling `run_agent(prompt)` without a session remains an independent one-shot run.
-Both functions accept an already-connected `mcp_server`; callers retain ownership
-of it. Without a supplied server, standalone calls and evaluations continue to
-open and close their own MCP connection per run.
+**Verified on September 15, 2026 (UTC):** 54 Python tests passed on Python 3.14 and in the Python 3.12 Docker image; 23 frontend tests, TypeScript checks, and the production build passed. Clean Python and frontend installs also passed.
 
-## Design Decisions
+The full evaluation run passed **43/45 trials and 818/820 checks**. Two trials of the combined position-and-capital-calls question unnecessarily called document search; all answer-content and amount checks passed. The strict tool-selection checks remain in place. These results describe this run, not a guarantee of future model behavior.
 
-- **Structured facts through deterministic tools.** `list_investors` enumerates
-  all investor records in name order; `find_investor` resolves one investor by name.
-  These tools, plus `get_positions` and `get_capital_calls`, use `backend/domain.py`
-  to query `backend/data/northstar.db`, with parameterized filters for lookups.
-  The model chooses which capabilities
-  to invoke; application code supplies the authoritative values for this demo. This keeps financial data
-  access behind domain functions rather than asking the model to infer balances
-  from prose or giving it arbitrary data access.
-- **Document context through retrieval.** `search_investor_documents` uses
-  semantic search in an OpenAI vector store for side-letter terms and meeting
-  context. It prefixes the query with the investor name, then filters results to
-  filenames containing the first word of that name, returning at most three
-  matching results. This is simple prototype context scoping, not an
-  authorization boundary.
-- **MCP as the capability interface.** Both structured tools and document search
-  are exposed through the same MCP server. MCP provides tool discovery and
-  invocation; domain functions and vector-store search perform the actual data
-  access. Business logic remains separate from agent configuration.
-- **Source attribution.** MCP results include authoritative database/document
-  provenance alongside their `data`. The MCP custom-data extractor captures sources
-  from successful tool outputs. `collect_sources(result.new_items)` builds the
-  current-run registry, preserving metadata and deduplicating by `source_id`
-  with the first occurrence winning. Historical sources and model-written source
-  text never populate that registry. Database provenance identifies the database,
-  schema, table, and record key; document provenance uses the filename and file ID
-  returned by search. The agent uses `[[cite:source_id]]` markers, validated against
-  sources returned during that run. Python assigns numbers in order of first citation,
-  reuses numbers for repeated sources, and displays invalid references as
-  `[citation unavailable]`. Only cited sources appear in the rendered citation
-  list. Numbering restarts for each answer. This validates source identity, not claim support.
-- **Reuse across entry points.** `backend.service.generate_briefing(prompt, conversation_id=None)` returns a
-  `BriefingResult` with `conversation_id`, `answer`, `citations`, and `invalid_source_ids`. Each
-  citation preserves the full authoritative source object. Use
-  `dataclasses.asdict(result)` for a JSON-ready dictionary. The web API uses this
-  boundary; evaluations continue to inspect the raw
-  `run_agent()` response.
-- **Optional agent sessions.** Python callers can supply an SDK `Session` to
-  `run_agent(prompt, session=session)`. `OpenAIConversationsSession` stores history
-  in OpenAI's Conversations API; reconstruct it with
-  `OpenAIConversationsSession(conversation_id=session.session_id)` to resume.
-  Old dialogue supplies conversational context, with assistant citation markers
-  stripped and tool calls, outputs, reasoning, and other execution artifacts
-  excluded from replayed model input. Stored history is unchanged; current input
-  items are preserved. The agent is instructed to retrieve fresh factual evidence
-  and cite its own MCP results; Python validates source membership for that run.
-  The service creates a new wrapper for each HTTP request, using the supplied
-  conversation ID to resume hosted history. No session objects or transcripts
-  are retained between requests in FastAPI process memory, so another backend
-  worker with access to the same OpenAI project can handle a follow-up. This
-  supports future multiple-worker deployment; it does not configure one.
-  Evaluation trials remain
-  independent one-shot calls to `run_agent(prompt)`.
-  A small callback adapter handles SDK 0.22.2's history bookkeeping so sanitized
-  old messages are not saved again as new turns.
-- **Visible conversation in React.** The page retains the opaque conversation ID
-  and each successful user/assistant turn in React state. Follow-ups send only the
-  new prompt and ID, never the visible transcript. FastAPI restores OpenAI-hosted
-  context and retrieves fresh MCP evidence for each factual turn. Each answer
-  keeps its own citations; earlier turns stay visible during loading or errors.
-  **New conversation** resets local state without deleting hosted history.
-- **Citation presentation in React.** The page renders Markdown with
-  `react-markdown` and GFM support, turning matching `[n]` text references into
-  buttons for the backend's exact citation object. It never renumbers or repairs
-  citations. Code and links remain unchanged; raw HTML is not rendered. A
-  shadcn-style Radix Dialog sheet supplies keyboard dismissal and focus handling.
-  Labels come only from source metadata: record keys, fund names, or humanized
-  filenames and valid dates encoded in them. Investor metadata currently has an
-  ID but no name, so its label is `Investor Record — INV-001`. Missing provenance
-  is not invented; the source drawer displays the fields actually returned.
-  Opening a citation does not download an original document or query a database
-  record. Each assistant turn retains its own `RenderedResponse`; the HTTP
-  `BriefingResponse` type adds the conversation ID without changing presentation types.
+Run offline checks from the repository root with the Python environment active:
 
-## Data and Documents
-
-**All business data is synthetic. Northstar Capital and every investor are
-fictional.** [backend/data/northstar.db](backend/data/northstar.db) stores investor IDs, names and
-types; positions in Northstar Growth Fund II with commitment, contributed and
-unfunded amounts; and capital calls with amounts, due dates and statuses.
-
-| Investor | Structured coverage | Documents |
-| --- | --- | --- |
-| Redwood Family Office | Investor record, fund position, outstanding capital call | [Side letter](documents/redwood_side_letter.md); [August 14, 2026 meeting notes](documents/redwood_meeting_notes_2026_08_14.md) |
-| Beacon University Endowment | Investor record, fund position, paid capital call | [Side letter](documents/beacon_side_letter.md); [July 20, 2026 meeting notes](documents/beacon_meeting_notes_2026_07_20.md) |
-| Atlas Pension Fund | Investor record only; no position or capital-call records | None |
-
-The four Markdown documents contain reporting obligations and meeting discussion
-context. To inspect an answer, compare financial values with the SQLite database
-(or its synthetic seed data in [backend/create_database.py](backend/create_database.py)) and
-document-derived claims with the cited files in [documents/](documents/).
-The agent is instructed to acknowledge unavailable information.
-
-## Project Structure
-
-```text
-backend/
-  __init__.py          Python application package
-  api.py               FastAPI validation, startup, and service transport
-  service.py           Per-request session wrapper and BriefingResult
-  citations.py         Deterministic rendering of validated citations
-  mcp_agent.py         Agent execution, history filtering, and provenance validation
-  mcp_server.py        MCP tools for structured records and document search
-  domain.py            SQLite data-access functions
-  paths.py             Shared backend and repository resource paths
-  data/northstar.db    Existing synthetic operational records
-  create_database.py   Optional database recreation/reset with seed data
-  setup_documents.py   Reuses or creates a store; saves new ID to root .env
-frontend/
-  src/App.tsx          Visible turns, scrollable history, pinned composer
-  src/api/briefings.ts Configurable HTTP client
-  src/types/briefing.ts Presentation and HTTP response types
-  src/components/     Briefing, SourceDrawer, and dialog components
-  src/sources.ts      Source labels and metadata detail rows
-  src/styles.css      Northstar visual styling
-  .env.example        Public API URL example
-documents/             Synthetic side letters and meeting notes
-evals/
-  cases.json          Deterministic output, amount, and tool-call assertions
-  run_evals.py        Independent sequential agent trials
-  results/            Generated JSON reports (gitignored)
-tests/                 Offline Python tests
-Dockerfile             Python backend image
-.dockerignore          Docker build-context exclusions
-requirements.txt       Python dependencies
-.env.example           Configuration placeholders; .env remains at root
-.gitignore             Excludes environments, secrets, and generated files
-```
-
-All shared paths are resolved in `backend/paths.py` from the package location.
-The root `.env` and `documents/` stay in place; SQLite lives in `backend/data/`.
-Run Python entry points from the repository root with `python -m backend.<module>`,
-such as `backend.setup_documents` for document-store setup.
-
-## Running Locally
-
-Use Python 3.10+ and Node.js 22.12+ (the frontend's declared minimum).
-The Docker image uses Python 3.12. Session behavior has been verified against
-`openai-agents==0.22.2`; Python dependencies are not currently pinned.
-
-The commands below use PowerShell. In other shells, use the corresponding
-virtual-environment activation command and `npm` in place of `npm.cmd`.
-
-```powershell
-git clone https://github.com/HectorFraireSanchez/gp-investor-relations-agent.git
-cd gp-investor-relations-agent
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-if (-not (Test-Path .env)) { Copy-Item .env.example .env }
-```
-
-Edit `.env` to add your own API key. Leave the vector-store ID blank on first setup:
-
-```dotenv
-OPENAI_API_KEY=your-openai-api-key
-OPENAI_VECTOR_STORE_ID=
-CORS_ALLOW_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
-```
-
-Start the web backend from the repository root with the Python environment active:
-
-```powershell
-python -m uvicorn backend.api:app --reload --loop backend.api:create_event_loop
-```
-
-In a second terminal, start the frontend:
-
-```powershell
-cd frontend
-npm.cmd install
-npm.cmd run dev
-```
-
-Install frontend dependencies initially and when they change. Later starts only
-need `npm.cmd run dev`. `npm.cmd` avoids PowerShell's `npm.ps1` execution-policy
-issue without changing the execution policy. Press Ctrl+C in each server's
-terminal to stop it.
-
-Run one backend on port 8000 at a time. If the Docker backend is running, use
-`docker stop northstar-backend` before starting local Uvicorn.
-
-The explicit loop factory keeps MCP subprocesses working with Uvicorn's reload
-mode on Windows, where its default reload loop does not support subprocesses.
-It uses the standard asyncio loop on other platforms. Without reload,
-`python -m uvicorn backend.api:app` also works on Windows.
-
-Open `http://localhost:5173`. The Vite server uses a fixed port so it matches the
-API's local CORS allowlist (`localhost:5173` and `127.0.0.1:5173`). Requests default
-to `http://localhost:8000`; to change that origin, copy `frontend/.env.example` to
-`frontend/.env.local`, set `VITE_API_BASE_URL`, and restart Vite. Only the public
-API origin belongs there. OpenAI credentials stay in the repository-root `.env`
-on the Python backend and must never appear in `VITE_` variables.
-
-The API client sends requests directly; there is no Vite development proxy.
-For a deployed backend, set `VITE_API_BASE_URL` to its public base URL **before
-building the frontend**. Vite embeds this value in the build, so changing it
-requires rebuilding (or restarting Vite during development).
-
-The backend reads `CORS_ALLOW_ORIGINS` as a comma-separated list of exact frontend
-origins. It defaults to the two local origins above; add the real frontend origin
-when deploying and restart the backend. No wildcard or production origin is
-enabled by default. Only GET/POST and the Content-Type request header are allowed.
-
-`GET http://localhost:8000/health` returns `{"status":"ok"}` without calling the
-agent or OpenAI. Normal application startup initializes the document store and
-connects MCP before accepting requests; this endpoint reports service liveness, not upstream
-API health.
-
-`POST /api/briefings` accepts `{"prompt": "Prepare me for Redwood."}` to start an
-OpenAI-hosted conversation. It returns flat JSON with `conversation_id`, `answer`,
-`citations` (each with `number`, `source_id`, and the complete `source` object),
-and `invalid_source_ids`. Send the returned ID on a later request:
-
-```json
-{"prompt": "What did they discuss last time?", "conversation_id": "<returned ID>"}
-```
-
-Omitting the ID (or sending `null`) starts a new conversation. A supplied ID must
-be a nonblank string of at most 256 characters; it is otherwise treated as opaque.
-Each request retrieves fresh MCP evidence and validates citations against its own
-tool results. React handles the conversation ID automatically as users ask
-follow-up questions; users do not need to manage it. Empty,
-non-string, blank, or over-10,000-character prompts return HTTP 422, as do invalid
-conversation IDs and unknown extra request fields. Generation errors, including
-upstream conversation errors, return a generic HTTP 502 with diagnostics logged
-on the backend rather than exposed to clients. API
-documentation is available at `http://127.0.0.1:8000/docs`.
-
-At startup, the API lifespan calls `ensure_vector_store()` from
-`backend/setup_documents.py` once per process, before handling requests.
-It reuses the configured store if it exists. If no ID is configured, or OpenAI
-reports that the configured store was not found, it creates a store, uploads the
-files in `documents/`, waits for indexing, and saves `OPENAI_VECTOR_STORE_ID` in
-`.env` and the running process. Initial startup may take longer while documents
-are indexed. No manual document-setup command, ID copying, or PowerShell
-environment-variable exports are needed.
-
-The MCP server starts automatically once per worker; no separate command is
-needed. A connection or initial tool-discovery failure prevents startup. A failed
-or cancelled briefing does not close the shared connection. If the MCP subprocess
-itself exits after startup, restart the backend to recreate it; automatic
-subprocess recovery is not implemented.
-
-For later runs, activate `.venv` and start the backend and frontend as above.
-Backend configuration is loaded from `.env`. That file is intentionally git-ignored, and `.env.example` contains
-placeholders only. Each user supplies their own OpenAI credentials and store.
-Access to the model, Conversations API, and vector-store operations is required
-for live use. Setup errors other than a missing store propagate and prevent API
-startup. To initialize documents without starting the API, run
-`python -m backend.setup_documents`.
-
-Normal startup uses the existing `backend/data/northstar.db`. To recreate a missing
-database or reset it to the synthetic seed data, optionally run
-`python -m backend.create_database`. This deletes and replaces the existing database;
-the app does not initialize SQLite automatically.
-
-OpenAI API usage may incur charges and is
-[billed separately from ChatGPT subscriptions](https://help.openai.com/en/articles/9039756-managing-billing-settings-on-chatgpt-web-and-platform).
-
-## Running the Backend in Docker
-
-Docker packages only the Python backend, its SQLite database, and the synthetic
-documents. The frontend still runs separately with Vite.
-
-With Docker Desktop running and a configured root `.env`, run from the repository root:
-
-```powershell
-docker build -t northstar-backend .
-docker run -d --name northstar-backend --env-file .env -p 127.0.0.1:8000:8000 northstar-backend
-docker logs -f northstar-backend
-```
-
-Docker's `--env-file` expects unquoted `KEY=value` entries. Ctrl+C stops following
-the logs while the detached container keeps running. Check
-http://localhost:8000/health after startup, then start Vite as described above.
-
-To replace an existing container after backend changes:
-
-```powershell
-docker build -t northstar-backend .
-docker stop northstar-backend
-docker rm northstar-backend
-docker run -d --name northstar-backend --env-file .env -p 127.0.0.1:8000:8000 northstar-backend
-```
-
-The image uses `python:3.12-slim-bookworm`, installs `requirements.txt`, runs as a
-non-root user, and starts Uvicorn on port 8000. `.dockerignore` excludes secrets,
-local environments, frontend files, tests, and evaluation artifacts.
-
-`--env-file` passes configuration into the container; it does not mount the host
-file. A new vector-store ID generated inside Docker is saved to `/app/.env` in
-that container, not to the host `.env`. Recreating the container with a blank or
-stale host ID creates another store. Configure a valid existing ID on the host
-to reuse it. These commands configure no volumes or host-code mounts; code and
-bundled data changes require rebuilding the image.
-
-## Measuring Briefing Latency
-
-The backend emits JSON timing records to stderr, visible in Render's **Logs**.
-After deploying, run a briefing and filter logs for `"event": "timing"`.
-Each request has a generated `request_id`; filter by that ID to see its stages.
-`operation_id` pairs each stage's `start` and `end` records, including repeated
-tool or model calls. End records include `duration_ms` and `status` (`ok`,
-`error`, or `cancelled`). `offset_ms` locates the event relative to the request.
-A start with no end can help identify where a process was interrupted.
-
-| Stage | What it measures |
-| --- | --- |
-| `startup.documents` | Startup vector-store validation or creation/indexing; separate from requests |
-| `api.total` | Validated FastAPI handler execution, including error handling |
-| `briefing.total` | Service execution, including session wrapper and citation rendering |
-| `conversation.wrapper` | Local session/client construction; not remote history loading |
-| `agent.total` | Agent workflow and source validation; standalone runs also include MCP connection/cleanup |
-| `mcp.connect` | Subprocess startup and MCP protocol negotiation, once at web worker startup |
-| `mcp.list_tools` | Each tool-list request, including cache hits |
-| `conversation.load` | Hosted history read, including lazy conversation creation on a new turn |
-| `model.request` | Each SDK model invocation, including transport/retries; `call` numbers the invocations |
-| `mcp.tool` | Each named tool's round trip, including SQLite work or vector-store search |
-| `conversation.save` | Hosted history write |
-| `agent.runner` | Entire SDK run, including history, model invocations, and tools |
-| `citations.validate` | Source collection and citation-marker validation |
-| `citations.render` | Formatting the answer and citation metadata |
-| `mcp.cleanup` | MCP connection and subprocess shutdown, once at web worker shutdown |
-
-Times are inclusive: **do not sum parent and child stages**. Tool calls can run
-concurrently, so their summed durations can exceed elapsed wall time. Compare
-`mcp.connect`, individual `model.request` and `mcp.tool` entries, and history
-operations to locate the delay. Timings retain exception class names but do not
-record prompts, answers, tool arguments/results, API keys, or conversation IDs.
-For web requests, `mcp.connect` and `mcp.cleanup` should no longer appear within
-each request's timing group. They remain logged separately at worker startup and
-shutdown. Render waking or restarting a worker still requires MCP startup once.
-
-These logs measure work in the backend process. They exclude Render's wake-up
-time before FastAPI receives the request, Python imports before the lifespan,
-HTTP response serialization, browser networking, and React rendering. To compare
-the user's wait with backend work, open browser developer tools → **Network**,
-submit a briefing, and compare the `/api/briefings` request duration with
-`api.total`. The difference includes network/platform overhead and cannot be
-attributed entirely to a cold start. Compare a first request after inactivity
-with an immediate follow-up. No extra model calls are made to collect timings.
-
-## Tests and Agent Evaluations
-
-Run the offline Python tests from the repository root with `.venv` active:
-
-```powershell
+```sh
 python -m unittest discover -s tests -v
+npm --prefix frontend test
+npm --prefix frontend run typecheck
+npm --prefix frontend run build
 ```
 
-Coverage includes session filtering and SDK persistence bookkeeping, new/resumed
-service sessions, HTTP validation and safe errors, CORS and health, citation
-rendering, resource paths, and a real local MCP subprocess without model calls.
+Run evaluations after configuring OpenAI and initializing the document store:
 
-Check the frontend without API access:
-
-```powershell
-cd frontend
-npm.cmd test
-npm.cmd run typecheck
-npm.cmd run build
-```
-
-The frontend tests cover conversation-ID reuse, per-turn citation identity,
-source labels, drawer focus, loading, retry/reset behavior, unexpected ID changes,
-keyboard submission, and API URL configuration. The production build goes into
-`frontend/dist/`; the backend Docker image does not serve it.
-
-Run agent evaluations separately from the repository root with API access and
-an initialized document store:
-
-```powershell
+```sh
+python -m backend.setup_documents
 python evals/run_evals.py
 ```
 
-The harness currently runs **9 cases with 5 sequential trials each**. Cases cover
-positions, outstanding/paid calls, reporting requirements, meeting history,
-missing records, combined structured queries, full briefing preparation, and
-complete investor enumeration with all three investor sources retrieved and cited.
-Each trial calls `run_agent(prompt)` without a session. Trials remain independent,
-with no concurrency or retry loop, and do not perform the API's document setup.
+Evaluations incur API usage. Timestamped reports in the ignored `evals/results/` directory retain each answer, tool calls, source IDs, assertions, and errors. The runner exits nonzero when any trial fails. Checks do not assess every claim's meaning or associate each matched amount with a specific field.
 
-| Assertion | Check |
+Backend JSON timing logs separate model calls, tool calls, conversation loading/saving, and citation processing. Use `request_id` to group a request and `duration_ms` to inspect each stage. Parent timings include their children; do not add them together. The timing records omit prompts, answers, and credentials.
+
+## Run locally
+
+Use **Python 3.12 or 3.14** and **Node.js 22.12+**; Node 24.19 was used for verification. Docker is optional for local development. An OpenAI API key with access to model calls and vector stores is required.
+
+**1. Install the backend dependencies.** From the repository root:
+
+```sh
+python -m venv .venv
+```
+
+Activate the environment with `source .venv/bin/activate` on macOS/Linux or `.venv\Scripts\Activate.ps1` in Windows PowerShell, then run:
+
+```sh
+python -m pip install -r requirements.txt
+```
+
+If PowerShell blocks activation, use `.venv\Scripts\python.exe` in place of `python`; use `npm.cmd` in place of `npm` if it blocks the npm PowerShell wrapper.
+
+**2. Configure the backend.** Copy [.env.example](.env.example) to `.env` and set `OPENAI_API_KEY`. Leave `OPENAI_VECTOR_STORE_ID` blank to create a store from [documents/](documents/), or provide an existing store containing these documents.
+
+```sh
+python -m backend.setup_documents
+python -m uvicorn backend.api:app --host 127.0.0.1 --port 8000
+```
+
+Document setup uploads and indexes the files when creating a store, then saves its ID to `.env`. Backend startup also runs this check. Existing stores are reused without synchronizing local document edits.
+
+Check [localhost:8000/health](http://localhost:8000/health) after startup. The bundled [SQLite database](backend/data/northstar.db) is ready to use. `python -m backend.create_database` resets it to the synthetic seed data if needed.
+
+**3. Start the frontend** in another terminal:
+
+```sh
+cd frontend
+npm ci
+npm run dev
+```
+
+Open [localhost:5173](http://localhost:5173). The frontend defaults to `http://localhost:8000`; copy [frontend/.env.example](frontend/.env.example) to `frontend/.env.local` to change `VITE_API_BASE_URL`. Vite embeds this public value at build time. Keep the OpenAI key in the backend environment.
+
+For the deployed arrangement, Render serves `frontend/dist/` after `npm ci && npm run build` in `frontend/`. Its `VITE_API_BASE_URL` points to the backend, and the backend's `CORS_ALLOW_ORIGINS` allows the exact frontend origin. The [Dockerfile](Dockerfile) packages the backend on Python 3.12 and listens on port 8000 as a non-root user. Deployment settings are managed in Render.
+
+## Scope and source layout
+
+This is a small synthetic demo without authentication, authorization, or tenant isolation. Document filename filtering scopes retrieval to an investor; it is not an access-control boundary. Answers and tool selection remain model-dependent and need human review.
+
+The UI keeps its visible conversation in memory. Refreshing or choosing **New conversation** resets the workspace but does not delete the hosted conversation. Reopening past conversations and history compaction are not implemented. Responses arrive when the full request completes; they are not streamed. A failed MCP subprocess requires a worker restart.
+
+| Directory | Purpose |
 | --- | --- |
-| `must_contain` / `must_not_contain` | Case-insensitive substrings of raw final output |
-| `must_contain_amounts` | Numeric equivalence using `Decimal` |
-| `required_tools` / `forbidden_tools` | Exact tool names from current SDK `ToolCallItem` records |
-| `required_source_ids` | Exact IDs in the authoritative current-run source registry |
-| `required_citation_ids` | Exact cited IDs that also belong to the current-run registry |
-
-Amount matching recognizes optional `$`, commas, decimals, and case-insensitive
-`k`/`thousand`, `m`/`million`, and `b`/`billion` suffixes. For example, `$5M`,
-`5,000,000`, and `5 million` satisfy an expected amount of `5000000`. It does not
-parse written-out numbers or associate a matched amount with a particular field.
-Ordinary text assertions, including `must_not_contain`, retain substring semantics.
-
-A trial passes only when the run completes and all checks pass. Errors are
-recorded and later trials continue. Per-case pass rate is passed trials divided
-by total trials; the overall report includes the same trial ratio and aggregate
-check counts. Exit status is 0 only when all trials pass, otherwise 1.
-
-Each full run creates one UTC-timestamped JSON file under `evals/results/`, with
-microseconds in the filename. It contains run settings and summaries, plus every
-case's trials: raw output, observed tools, source IDs, cited source IDs, check
-results, pass/fail, and errors.
-The directory is created automatically and is gitignored. Inspect individual
-failures, adjust the appropriate code or case expectations, and rerun to assess
-consistency. Assertions are deterministic; model answers and tool selection are not.
-
-## Technology
-
-React, TypeScript, Vite, Tailwind CSS, Radix Dialog (shadcn-style sheet),
-react-markdown, FastAPI, Uvicorn, Python, OpenAI Agents SDK, Model Context Protocol
-(MCP) Python SDK, OpenAI API and vector stores, SQLite, and python-dotenv.
-
-## Current Scope and Limitations
-
-- A portfolio prototype with a small synthetic dataset and local execution.
-  Operational records
-  are synthetic SQLite records, with no connection to a live fund-administration
-  system.
-- Reusing an existing vector store does not synchronize changes to local documents.
-- No application authentication, authorization or tenant isolation. Filename
-  filtering only narrows retrieved context.
-- Responses and tool selection are model-driven. Instructions request source
-  citations and acknowledgement of missing data; they do not guarantee factual
-  or citation correctness.
-- Evaluations check raw output, numeric amounts, and tool names across repeated
-  trials. They do not assert tool arguments or order, or establish whether a cited
-  source supports a claim. There is no LLM grader or token/cost tracking.
-  Backend logs provide stage-level latency timings; evaluation reports do not
-  aggregate these timings.
-- Python dependencies are unpinned. The session callback uses SDK behavior verified
-  against version 0.22.2; run the SDK regression tests when changing dependencies.
-  Frontend dependency versions are recorded in `frontend/package-lock.json`.
-- Hosted history can contain tool calls and outputs even though replay filtering
-  excludes them from subsequent model input. No history compaction or
-  application-level retention controls are implemented.
-- Requests are non-streaming. Visible turns and the conversation ID are kept only
-  in React state; refreshing resets the workspace. Hosted model history persists,
-  but restoring a previous workspace is not yet supported. The web layer adds no
-  authentication. Docker packages the backend, while frontend hosting, deployment
-  orchestration, and CI/CD remain outside the repository's setup. Keep this local
-  prototype on the default loopback hosts.
-
-## What This Project Demonstrates
-
-- Scoping a private-markets operational task into a working local briefing
-  application with concrete data requirements and example requests.
-- Connecting a web page, HTTP service, async agent orchestration and MCP tools across
-  the application workflow.
-- Designing context from two sources: deterministic financial records and
-  retrieved investor documents, with source metadata preserved for inspection.
-- Separating the agent workflow from citation presentation and future clients.
-- Maintaining hosted conversation context across stateless HTTP requests while
-  keeping factual provenance isolated to each agent run.
-- Improving agent behavior through repeated deterministic evaluations of amounts,
-  final answers, and actual tool calls.
-- Documenting setup, dataset coverage and limitations so another developer can
-  run and inspect the prototype with their own credentials.
+| [backend/](backend/) | HTTP API, agent orchestration, MCP tools, data access, citations, and timing |
+| [frontend/](frontend/) | React conversation interface and source drawer |
+| [documents/](documents/) | Synthetic side letters and meeting notes |
+| [tests/](tests/) | Offline Python regression tests |
+| [evals/](evals/) | Repeated agent evaluations and expected behavior |
